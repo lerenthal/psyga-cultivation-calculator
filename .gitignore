@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+.venv/
+instance/
+config_backups/
+.coverage
+*.db
+*.sqlite
+*.sqlite3
+*.pid
+*.log
+*.err
+app.log
+.env
+.idea/
+.vscode/
+# locally rendered sample documents
+issued_*.html

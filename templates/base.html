@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}PsygaBio Production System{% endblock %}</title>
+    <style>
+        :root {
+            --brand: #c9a843;
+            --brand-dark: #a8892f;
+            --bg: #e6e6e6;
+            --card: #ffffff;
+            --border: #000000;
+            --text: #000000;
+            --muted: #555555;
+            --danger: #000000;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+        }
+        .title-ribbon {
+            background: #1a1a1a;
+            color: #e0c06a;
+            text-align: left;
+            padding: 10px 20px;
+            font-size: 20px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-bottom: 3px solid #c9a843;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .title-ribbon .logo-img {
+            height: 44px;
+            width: auto;
+            display: block;
+        }
+        nav {
+            background: var(--brand);
+            color: #1a1a1a;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            border-bottom: 2px solid #000;
+        }
+        nav a {
+            color: #1a1a1a;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 6px 10px;
+        }
+        nav a:hover { background: var(--brand-dark); text-decoration: underline; }
+        nav .spacer { flex: 1; }
+        nav .user {
+            font-size: 0.92em;
+            opacity: 0.95;
+        }
+        nav .user a { padding: 4px 8px; }
+        main {
+            max-width: 960px;
+            margin: 24px auto;
+            padding: 0 20px;
+        }
+        .flashes {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 16px 0;
+        }
+        .flashes li {
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            border: 1px solid #000;
+            background: #fff;
+            color: #000;
+        }
+        .flashes li.danger { background: #000; color: #fff; border: 2px solid #000; font-weight: bold; }
+        .flashes li.warning { background: #e6e6e6; color: #000; border: 2px solid #000; }
+        .flashes li.info    { background: #fff; color: #000; border: 1px solid #000; }
+        .flashes li.success { background: #fff; color: #000; border: 2px solid #000; font-weight: bold; }
+        h1 { color: #000; margin-top: 0; }
+        h2 { color: #000; border-bottom: 2px solid #000; padding-bottom: 6px; }
+        .card {
+            background: var(--card);
+            border: 2px solid #000;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .tab-guide {
+            border: 2px solid #000;
+            padding: 0 0 12px 0;
+            margin: 0 0 20px 0;
+            font-size: 14px;
+        }
+        .tab-guide h3 {
+            background: #000; color: #fff; padding: 8px 12px;
+            margin: 0 0 10px 0; font-size: 14px; letter-spacing: 1px;
+        }
+        .tab-guide ul { margin: 6px 0 6px 0; padding-left: 22px; }
+        .tab-guide li { margin-bottom: 6px; }
+        .tab-guide .guide-label { font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; }
+        button, .btn {
+            background: #000;
+            color: #fff;
+            padding: 12px 22px;
+            border: 2px solid #000;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+        }
+        button:hover, .btn:hover { background: #333; }
+        .btn-secondary { background: #fff; color: #000; }
+        .btn-secondary:hover { background: #e6e6e6; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #000; padding: 8px 10px; text-align: left; }
+        th { background: #e6e6e6; }
+        @media print {
+            nav, .no-print, .title-ribbon { display: none !important; }
+            body { background: #fff; }
+            .card { border: none; }
+            .explain-panel { page-break-before: always; }
+        }
+    </style>
+</head>
+<body>
+    <header class="title-ribbon no-print">
+        <img class="logo-img" src="{{ url_for('static', filename='psyga_logo.jpg') }}" alt="PsygaBio">
+        <span>PsygaBio Production Calculator V5</span>
+    </header>
+    <nav class="no-print">
+        <a href="{{ url_for('index') }}">Cultivation Calculator (WP)</a>
+        <a href="{{ url_for('extraction') }}">Extraction Calculator (EX)</a>
+        <a href="{{ url_for('capsulation') }}">Capsulation Calculator (CP)</a>
+        {% if current_user.is_authenticated and current_user.is_admin() %}
+            | <a href="{{ url_for('admin_history') }}">Admin Master Logs</a>
+            | <a href="{{ url_for('admin_settings') }}">Settings</a>
+        {% endif %}
+        <span class="spacer"></span>
+        {% if current_user.is_authenticated %}
+            <span class="user">
+                Current User: <b>{{ current_user.username }}</b> ({{ current_user.role }})
+                &nbsp;|&nbsp;<a href="{{ url_for('account_password') }}">Change Password</a>
+                &nbsp;|&nbsp;<a href="{{ url_for('logout') }}">Logout</a>
+            </span>
+        {% else %}
+            <span class="user"><a href="{{ url_for('login') }}">Login</a></span>
+        {% endif %}
+    </nav>
+
+    <main>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flashes">
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

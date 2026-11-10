@@ -1,0 +1,125 @@
+# =============================================================================
+# PsygaBio Production System V5.0 -- calculation configuration
+# Recipes aligned to SOP forms FORM-CULT-003 / 004 (v3.0):
+#   substrate per 16 L bucket: coir 780 + vermiculite 660 + gypsum 60
+#     + water 4800 = 6300 g net per bucket
+#   grain batch: 5 kg grain : 10 L water (SOP-CULT-004)
+# =============================================================================
+#
+# ADMIN: every calculation option lives in this file. To add or change an
+# option (a new container, a new solvent strength, a new capsule size, ...)
+# edit this file only -- NO code change is needed.
+#
+#   * The file is re-read on every request, so changes take effect on the
+#     next page load. No restart is required.
+#   * If a value is missing or invalid, the app shows a clear error on the
+#     calculator page instead of a stack trace.
+#   * In GMP use, treat changes to this file like any other controlled
+#     parameter change: review, approve, and record them before use.
+#   * Save this file as UTF-8 (the app reads it as UTF-8).
+# =============================================================================
+
+# --- Cultivation -------------------------------------------------------------
+contamination_buffer: 0.10
+dry_matter_ratio: 0.07
+
+substrate_recipe:
+  coco_coir: 780
+  vermiculite: 660          # grade 2/3
+  gypsum: 60
+  water: 4800
+# Per-bucket net weight = 780 + 660 + 60 + 4800 = 6300 g
+
+grain_batch:
+  grain: 5000
+  water: 10000
+
+# Grams of spawn per grain batch (was hardcoded to 10000 in V1).
+grain_batch_size_g: 10000
+
+# --- Media (liquid culture) ------------------------------------------------
+media_parameters:
+  # Liquid media is prepared with this % excess over the LC volume
+  # needed for inoculation (media bottles in excess).
+  excess_pct: 30
+
+# Container options. To ADD a container, copy a block, give it a new
+# unique name, and set its three values (grams substrate, grams spawn,
+# ml liquid culture per container). The new option appears in the
+# Cultivation dropdown automatically.
+containers:
+  monotub:
+    substrate: 2100
+    spawn: 700
+    liquid_culture: 20
+  4liter_box:
+    substrate: 1600
+    spawn: 500
+    liquid_culture: 12
+  2liter_box:
+    substrate: 600
+    spawn: 200
+    liquid_culture: 6
+
+# --- Extraction --------------------------------------------------------------
+extraction_parameters:
+  # V5.0: the unit of production is one PORTION of dried mushroom per
+  # extraction bottle. Only whole portions are extracted - a partial
+  # portion is held back and documented (GMP: no partial-bottle
+  # extraction).
+  grams_per_bottle: 120
+
+  # Working volume of MeOH charged into one extraction bottle. The
+  # mushroom-to-solvent ratio is grams_per_bottle : this volume, i.e.
+  # 120 g : 2400 mL = 1:20.
+  solvent_volume_per_bottle_ml: 2400
+
+  # Size of the 100% MeOH stock bottle that the working volume is
+  # prepared from. 2500 mL = the 2.5 L bottle used on the bench.
+  stock_bottle_volume_ml: 2500
+
+  # The working volume is prepared by diluting the stock bottle to the
+  # selected strength:
+  #     MeOH to take out = stock_bottle_volume_ml
+  #                       - solvent_volume_per_bottle_ml * (pct/100)
+  #     water to put back = solvent_volume_per_bottle_ml * (1 - pct/100)
+  # At the controlled defaults (2500 mL bottle, 2400 mL working volume):
+  #     100% MeOH -> take out  100 mL, put back   0 mL
+  #      90% MeOH -> take out  340 mL, put back 240 mL
+  #      75% MeOH -> take out  700 mL, put back 600 mL
+  # Change only with QA approval.
+
+  concentration_factor: 4.0  # 1x4 more concentrated (25% yield)
+  resuspension_water_per_bottle_ml: 150
+  # Solvent strengths offered in the Extraction dropdown, in display
+  # order. To add e.g. "80%", add a "- 80%" line here -- no code change.
+  allowed_solvent_types:
+    - "100%"
+    - "90%"
+    - "75%"
+
+# --- Capsulation -------------------------------------------------------------
+capsulation_parameters:
+  # Dosage modes offered in the Capsulation dropdown.
+  dosage_modes:
+    - id: psilocybin_only
+      label: "Psilocybin only"
+    - id: tpe
+      label: "TPE (psilocybin + 1.39 x psilocin)"
+  # Capsule sizes in the calculated table. To add a size, copy a block.
+  capsule_specs:
+    - type: "0"
+      dose_mg: 10
+      label: "Type 0 / 10mg dose"
+    - type: "1"
+      dose_mg: 5
+      label: "Type 1 / 5mg dose"
+    - type: "2"
+      dose_mg: 2
+      label: "Type 2 / 2mg dose"
+  # Anti-caking defaults to this % of BLEND mass when the form is blank.
+  default_anti_caking_pct: 5.0
+  # Molecular weights for the TPE conversion (TPE = psilocybin +
+  # psilocin x MW_psilocybin / MW_psilocin).
+  mw_psilocybin: 284.25
+  mw_psilocin: 204.27

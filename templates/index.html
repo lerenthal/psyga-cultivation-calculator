@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+{% block title %}Cultivation Calculator (WP){% endblock %}
+{% block content %}
+{% import "explain.html" as ex %}
+{% import "raw_materials.html" as rm with context %}
+<style>
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .form-group { display: flex; flex-direction: column; }
+    .form-group.full-width { grid-column: span 2; }
+    .form-group label { font-weight: bold; margin-bottom: 4px; }
+    .form-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .form-group input, .form-group select {
+        padding: 10px; border: 1px solid #000; font-size: 15px;
+    }
+    .form-divider {
+        grid-column: span 2;
+        border-top: 2px solid #000;
+        margin-top: 10px;
+        padding-top: 12px;
+        font-weight: bold;
+        font-size: 13px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+    }
+    .protocol {
+        background: #fff; padding: 40px; border: 2px solid #000;
+    }
+    .protocol-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 16px; margin-bottom: 24px; }
+    .protocol-header h1 { margin: 0; font-size: 24px; color: #000; }
+    .protocol-header h2 { margin: 6px 0 0 0; font-size: 16px; font-weight: normal; }
+    .doc-badge {
+        display: inline-block; background: #000; color: #fff; padding: 4px 10px;
+        font-family: 'Courier New', monospace; letter-spacing: 1px; font-weight: bold; margin-top: 10px;
+    }
+    .meta-info { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 24px; font-size: 14px; }
+    .meta-info span { background: #f0f0f0; padding: 8px; }
+    .meta-info span strong { display: block; font-size: 11px; color: #555; margin-bottom: 2px; }
+    .section { margin-bottom: 24px; }
+    .section h3 { background: #000; color: #fff; padding: 8px 10px; margin: 0 0 12px 0; font-size: 14px; }
+    .section p { margin: 4px 0; font-size: 14px; }
+    .section p strong { display: inline-block; width: 220px; }
+    .section::after {
+        content: "Comments:";
+        display: block;
+        margin-top: 20px;
+        padding-bottom: 2px;
+        border-bottom: 1px solid #000;
+        font-size: 12px;
+    }
+    @page {
+        size: A4;
+        margin: 22mm 12mm 18mm 12mm;
+        @top-center {
+            content: "PsygaBio Production Calculator V5 — FACILITY WORKING PROTOCOL";
+            font-family: Arial, sans-serif;
+            font-size: 9pt;
+            color: #000;
+        }
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-family: Arial, sans-serif;
+            font-size: 9pt;
+            color: #000;
+        }
+    }
+    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; }
+    .signature-box { text-align: center; }
+    .signature-box .line { border-top: 1px solid #000; margin-top: 40px; padding-top: 5px; }
+        /* V4: SOP forms are collapsed on screen; WP + index stay visible.
+           In print they always expand (see @media print below). */
+        .form-toggle { margin: 12px 0 4px; }
+        .view-form-btn {
+            background: #fff;
+            color: #000;
+            border: 2px solid #000;
+            padding: 8px 14px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .view-form-btn:hover { background: #e6e6e6; }
+        .raw-form.form-collapsed { display: none; }
+    @media print {
+        body { background: #fff; }
+        .protocol { border: none; padding: 20px; }
+        .raw-form { page-break-before: always; }
+        .raw-form.form-collapsed { display: block !important; }
+        .form-toggle { display: none !important; }
+        body.print-wp .raw-form, body.print-wp .explain-panel { display: none !important; }
+        body.print-spawn .doc-wp, body.print-spawn .doc-incubation, body.print-spawn .doc-substrate, body.print-spawn .doc-media, body.print-spawn .explain-panel { display: none !important; }
+        body.print-incubation .doc-wp, body.print-incubation .doc-spawn, body.print-incubation .doc-substrate, body.print-incubation .doc-media, body.print-incubation .explain-panel { display: none !important; }
+        body.print-substrate .doc-wp, body.print-substrate .doc-spawn, body.print-substrate .doc-media, body.print-substrate .explain-panel { display: none !important; }
+        body.print-media .doc-wp, body.print-media .doc-spawn, body.print-media .doc-substrate, body.print-media .explain-panel { display: none !important; }
+    }
+</style>
+
+<div class="card no-print">
+    <h1>Cultivation Calculator (Working Protocol)</h1>
+    <div class="tab-guide">
+        <h3>HOW TO USE THIS TAB</h3>
+        <ul>
+            <li><span class="guide-label">Mandatory (standard calculation):</span>
+                Strain, Culture Lot #, Container Type (dropdown — all options come from <code>config.yaml</code>),
+                Avg Yield Fresh (g/container), Target Dry Weight (g).</li>
+            <li><span class="guide-label">Optional (reverse calculation):</span>
+                Spawn Bags Colonized <b>and</b> Spawn Bag Size (g) — fill <b>both</b> to reverse-calculate
+                substrate from spawn you have already colonized. Leave both blank for the standard
+                calculation. In reverse mode the Target Dry Weight is not used and Avg Yield only feeds
+                the expected-yield estimate.</li>
+            <li><span class="guide-label">Expected output:</span>
+                a printable Facility Working Protocol (WP doc number) with container count, substrate
+                buckets + ingredient totals, grain-spawn batches, inoculation/bagging amounts
+                (or &ldquo;Not required&rdquo; in reverse mode), and Technician / QA / Date signature lines —
+                followed by the printable raw-material SOP forms (spawn FORM-CULT-003, substrate
+                FORM-CULT-004, media FORM-CULT-009) pre-filled with these amounts.</li>
+        </ul>
+    </div>
+    <form method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="strain">Strain</label>
+                <input type="text" id="strain" name="strain" required placeholder="e.g., A. cubensis"
+                       value="{{ request.form.strain or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="cult_lot">Culture Lot #</label>
+                <input type="text" id="cult_lot" name="cult_lot" required placeholder="e.g., CL-2024-001"
+                       value="{{ request.form.cult_lot or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="container_type">Container Type</label>
+                <select id="container_type" name="container_type" required>
+                    {% for ct in container_types %}
+                        <option value="{{ ct }}" {% if request.form.container_type == ct %}selected{% endif %}>{{ ct }}</option>
+                    {% endfor %}
+                </select>
+                <span class="form-hint">Need a different container (e.g. a 2liter shoebox)? Add it under <code>containers:</code> in <code>config.yaml</code> — admins can do this in <b>Settings &rarr; Configuration</b> without touching the server (no code change, no restart; it appears here on the next page load). Technicians: ask an admin to add it for you.</span>
+            </div>
+            <div class="form-group">
+                <label for="avg_yield_fresh">Avg Yield Fresh (g/container)</label>
+                <input type="number" id="avg_yield_fresh" name="avg_yield_fresh" step="0.01" placeholder="e.g., 500"
+                       value="{{ request.form.avg_yield_fresh or '' }}">
+                <span class="form-hint">Required for the standard calculation; optional in reverse mode (used only for the expected-yield estimate).</span>
+            </div>
+            <div class="form-group">
+                <label for="target_dry_weight">Target Dry Weight (g)</label>
+                <input type="number" id="target_dry_weight" name="target_dry_weight" step="0.01" placeholder="e.g., 1000"
+                       value="{{ request.form.target_dry_weight or '' }}">
+                <span class="form-hint">Required for the standard calculation; not used in reverse mode.</span>
+            </div>
+            <div class="form-divider">Optional — Reverse Calculation (colonized spawn on hand)</div>
+            <div class="form-group">
+                <label for="spawn_bags_colonized">Spawn Bags Colonized (optional)</label>
+                <input type="number" id="spawn_bags_colonized" name="spawn_bags_colonized" step="1" min="1" placeholder="e.g., 13"
+                       value="{{ request.form.spawn_bags_colonized or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="spawn_bag_size_g">Spawn Bag Size (g) (optional)</label>
+                <input type="number" id="spawn_bag_size_g" name="spawn_bag_size_g" step="0.01" min="0.01" placeholder="e.g., 800"
+                       value="{{ request.form.spawn_bag_size_g or '' }}">
+            </div>
+            <div class="form-group full-width">
+                <span class="form-hint">Leave both spawn fields blank for the standard target-driven calculation. Fill BOTH in to reverse-calculate the substrate needed from spawn you have already colonized — the number of containers is then limited by the spawn on hand, and grain/liquid-culture prep is shown as not required.</span>
+            </div>
+        </div>
+        <button type="submit" style="margin-top:18px;">Calculate Working Protocol</button>
+    </form>
+</div>
+
+{% if result %}
+{% if reprint %}
+{{ ex.reprint_banner(doc_number, result) }}
+{% endif %}
+<div class="protocol doc-wp">
+    <div class="protocol-header">
+        <h1>FACILITY WORKING PROTOCOL</h1>
+        <h2>Mycology Production Batch Calculator</h2>
+        <div class="doc-badge">DOC: {{ doc_number }}</div>
+        <p style="margin-top: 10px; font-size: 12px;">Generated: {{ result.timestamp }} by {{ current_user.username }} ({{ current_user.role }})</p>
+    </div>
+
+    <div class="meta-info">
+        <span><strong>Strain</strong>{{ result.strain }}</span>
+        <span><strong>Culture Lot</strong>{{ result.cult_lot }}</span>
+        <span><strong>Container</strong>{{ result.container_type }}</span>
+        {% if result.calculation_mode == 'reverse' %}
+        <span><strong>Expected Dry (g)</strong>{{ result.expected_dry_weight_g }}</span>
+        {% else %}
+        <span><strong>Target Dry (g)</strong>{{ result.target_dry_weight }}</span>
+        {% endif %}
+    </div>
+
+    {% if result.calculation_mode == 'reverse' %}
+    <div class="section">
+        <h3>REVERSE CALCULATION — COLONIZED SPAWN ON HAND</h3>
+        <p><strong>Calculation Mode:</strong> Reverse (spawn-limited)</p>
+        <p><strong>Colonized Spawn Bags:</strong> {{ result.spawn_bags_colonized }} bags &times; {{ result.spawn_bag_size_g }}g</p>
+        <p><strong>Total Spawn on Hand:</strong> {{ result.total_spawn_on_hand_g }}g</p>
+        <p><strong>Spawn Used:</strong> {{ result.total_spawn }}g ({{ result.total_containers }} containers)</p>
+        <p><strong>Leftover Spawn:</strong> {{ result.leftover_spawn_g }}g (insufficient for a further container)</p>
+        <p><strong>Expected Dry Yield (estimate):</strong> {{ result.expected_dry_weight_g }}g</p>
+        <p style="font-size:13px;">The spawn for this batch is already colonized, so grain-spawn prep and liquid culture below are shown as not required. The contamination buffer and target dry weight do not apply in reverse mode.</p>
+    </div>
+    {% endif %}
+
+    <div class="section">
+        <h3>1. CONTAINER PREP</h3>
+        <p><strong>Total Containers Needed:</strong> {{ result.total_containers }} units</p>
+        {% if result.calculation_mode == 'reverse' %}
+        <p><strong>Contamination Buffer:</strong> Not applied (spawn-limited)</p>
+        {% else %}
+        <p><strong>Contamination Buffer:</strong> {{ result.contamination_buffer_pct }}%</p>
+        {% endif %}
+        <p><strong>Base Containers:</strong> {{ result.base_containers }}</p>
+        <p><strong>Dry Yield/Container:</strong> {{ result.dry_yield_per_container }}g</p>
+    </div>
+
+    <div class="section">
+        <h3>2. BULK SUBSTRATE PREP</h3>
+        <p><strong>Total Substrate Required:</strong> {{ result.total_substrate }}g</p>
+        <p><strong>Substrate Buckets to Prepare:</strong> {{ result.substrate_bucket_count }} (each bucket = 6300g net)</p>
+        <table>
+            <tr>
+                <th>Ingredient</th>
+                <th>Per Bucket</th>
+                <th>Total ({{ result.substrate_bucket_count }} buckets)</th>
+            </tr>
+            <tr><td>Coco Coir</td><td>780g</td><td>{{ result.total_coir }}g</td></tr>
+            <tr><td>Vermiculite (Grade 2/3)</td><td>660g</td><td>{{ result.total_vermiculite }}g</td></tr>
+            <tr><td>Gypsum</td><td>60g</td><td>{{ result.total_gypsum }}g</td></tr>
+            <tr><td>Water</td><td>4800ml</td><td>{{ result.total_substrate_water }}ml</td></tr>
+            <tr style="background:#e6e6e6; font-weight:bold;">
+                <td>Per-bucket net weight</td>
+                <td>6300g</td>
+                <td>{{ result.substrate_bucket_count * 6300 }}g</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>3. GRAIN SPAWN PREP</h3>
+        {% if result.calculation_mode == 'reverse' %}
+        <p><strong>Status:</strong> Not required — spawn already colonized ({{ result.spawn_bags_colonized }} bags on hand)</p>
+        {% endif %}
+        <p><strong>Total Spawn Required:</strong> {{ result.total_spawn }}g</p>
+        <p><strong>Grain Batches to Prepare:</strong> {{ result.grain_batch_count }}</p>
+        <table>
+            <tr>
+                <th>Ingredient</th>
+                <th>Per Batch</th>
+                <th>Total ({{ result.grain_batch_count }} batches)</th>
+            </tr>
+            <tr><td>Grain</td><td>5000g</td><td>{{ result.total_grain }}g</td></tr>
+            <tr><td>Water</td><td>10000ml</td><td>{{ result.total_grain_water }}ml</td></tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>4. INOCULATION & BAGGING</h3>
+        {% if result.calculation_mode == 'reverse' %}
+        <p><strong>Status:</strong> Not required — spawn already colonized and bagged</p>
+        {% endif %}
+        <p><strong>Total Bags:</strong> {{ result.total_bags }}</p>
+        <p><strong>Spawn per Bag:</strong> {{ result.bag_size_spawn }}g</p>
+        <p><strong>Liquid Culture per Bag:</strong> {{ result.total_lc // result.total_bags }}ml</p>
+        <p><strong>Total Liquid Culture:</strong> {{ result.total_lc }}ml</p>
+    </div>
+
+    <div class="signature-line">
+        <div class="signature-box"><div class="line">Technician Signature</div></div>
+        <div class="signature-box"><div class="line">QA Signature</div></div>
+        <div class="signature-box"><div class="line">Date</div></div>
+    </div>
+</div>
+
+{# V4.0: raw-material SOP forms, populated from this calculation.
+   Reverse mode: spawn is already colonized and no liquid culture is
+   needed, so only the substrate form applies.
+   On screen the WP + index stay visible and each SOP form is
+   collapsed behind a "View form" button; in print they all expand. #}
+{% if result.calculation_mode == 'reverse' %}
+    <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="Substrate Batch Production Record" onclick="toggleRawForm(this)">View form: Substrate Batch Production Record</button></div>
+    {{ rm.substrate_form(result) }}
+{% else %}
+    <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="Spawn Batch Production Record" onclick="toggleRawForm(this)">View form: Spawn Batch Production Record</button></div>
+    {{ rm.spawn_form(result) }}
+    <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="Spawn Incubation & Release Log" onclick="toggleRawForm(this)">View form: Spawn Incubation &amp; Release Log</button></div>
+    {{ rm.incubation_form(result) }}
+    <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="Substrate Batch Production Record" onclick="toggleRawForm(this)">View form: Substrate Batch Production Record</button></div>
+    {{ rm.substrate_form(result) }}
+    <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="Liquid Media Preparation Record" onclick="toggleRawForm(this)">View form: Liquid Media Preparation Record</button></div>
+    {{ rm.media_form(result) }}
+{% endif %}
+<script>
+    function toggleRawForm(btn) {
+        var form = btn.parentElement.nextElementSibling;
+        if (!form || !form.classList.contains('raw-form')) return;
+        form.classList.toggle('form-collapsed');
+        var label = btn.getAttribute('data-label');
+        btn.textContent = form.classList.contains('form-collapsed')
+            ? 'View form: ' + label
+            : 'Hide form: ' + label;
+    }
+</script>
+
+<div class="card no-print" style="text-align:center;">
+    <button onclick="window.print()">Print / Save as PDF (all)</button>
+    <button onclick="printForm('wp')">Print WP only</button>
+    {% if result.calculation_mode != 'reverse' %}
+    <button onclick="printForm('spawn')">Print Spawn form</button>
+    <button onclick="printForm('incubation')">Print Incubation form</button>
+    {% endif %}
+    <button onclick="printForm('substrate')">Print Substrate form</button>
+    {% if result.calculation_mode != 'reverse' %}
+    <button onclick="printForm('media')">Print Media form</button>
+    {% endif %}
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">Clear / New Calculation</a>
+    <script>
+        function printForm(kind) {
+            document.body.className = '';
+            if (kind) document.body.classList.add('print-' + kind);
+            window.print();
+        }
+        window.onafterprint = function () { document.body.className = ''; };
+    </script>
+</div>
+
+{{ ex.panel("cultivation", result) }}
+{% endif %}
+{% endblock %}

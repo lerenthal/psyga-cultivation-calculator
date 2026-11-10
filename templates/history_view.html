@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Record {{ entry.doc_number }}{% endblock %}
+{% block content %}
+<style>
+    pre.payload {
+        background: #000; color: #fff; padding: 14px;
+        border-radius: 6px; overflow: auto; font-size: 13px;
+    }
+    pre.form-json {
+        background: #f0f0f0; color: #000; padding: 14px;
+        border-radius: 6px; overflow: auto; font-size: 13px; border: 1px solid var(--border);
+    }
+    .actions-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .actions-bar .btn { margin: 0; }
+    .kv { width: 100%; border-collapse: collapse; }
+    .kv th, .kv td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+    .kv th { background: #e6e6e6; width: 35%; }
+    .missing-note {
+        padding: 10px 14px; background: #f0f0f0; color: #000;
+        border: 2px solid #000; font-size: 14px;
+    }
+</style>
+
+<div class="card no-print">
+    <h1>Record {{ entry.doc_number }}</h1>
+    <div class="actions-bar">
+        <a class="btn btn-secondary" href="{{ url_for('admin_history') }}">&larr; Back to Master Logs</a>
+        <a class="btn" href="{{ url_for('admin_history_reprint', doc_number=entry.doc_number) }}">
+            &#x1F5B6; Reprint Original Protocol
+        </a>
+        <button class="btn" style="background:#444;" onclick="window.print()">Print This Audit Page</button>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Audit Metadata</h2>
+    <table class="kv">
+        <tr><th>Doc Number</th><td><code>{{ entry.doc_number }}</code></td></tr>
+        <tr><th>Batch Type</th><td>{{ entry.batch_type }}</td></tr>
+        <tr><th>Timestamp (UTC)</th><td>{{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td></tr>
+        <tr><th>Operator</th><td><b>{{ entry.user.username }}</b> (role: {{ entry.user.role }}, id: {{ entry.user.id }})</td></tr>
+        <tr><th>Strain</th><td>{{ entry.strain or '-' }}</td></tr>
+        <tr><th>Lot Number</th><td>{{ entry.lot_number or '-' }}</td></tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Original Form Inputs (operator entry, captured at issuance)</h2>
+    {% set form = entry.to_form() %}
+    {% if form %}
+        <p style="color: var(--muted); margin-top: -6px;">
+            These are the raw values the operator typed into the form when
+            this record was created. The protocol was calculated from
+            <em>exactly</em> these inputs.
+        </p>
+        <table class="kv">
+            {% for key, value in form.items() %}
+            <tr>
+                <th>{{ key }}</th>
+                <td><code>{{ value }}</code></td>
+            </tr>
+            {% endfor %}
+        </table>
+        <details style="margin-top: 10px;">
+            <summary style="cursor:pointer; color: var(--brand);">View as raw JSON</summary>
+            <pre class="form-json">{{ entry.form_data }}</pre>
+        </details>
+    {% else %}
+        <div class="missing-note">
+            <b>Inputs not captured.</b> This record was created before form
+            capture was enabled (or the row predates the schema migration).
+            Only the calculated payload is available for this entry.
+        </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Calculated Payload (snapshot at issuance)</h2>
+    <p style="color: var(--muted); margin-top: -6px;">
+        The values the calculator produced from the inputs above. Re-derivable
+        via the calculator engine given the same form inputs and config.
+    </p>
+    <pre class="payload">{{ entry.payload_data }}</pre>
+</div>
+{% endblock %}

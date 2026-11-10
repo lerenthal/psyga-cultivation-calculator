@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block title %}Extraction Production Plan (EX){% endblock %}
+{% block content %}
+{% import "explain.html" as ex %}
+{% set totals = result.get('totals', {}) if result else {} %}
+{% set per_bottle = result.get('per_bottle', {}) if result else {} %}
+{% set timeline = (result.get('timeline') or result.get('daily_checklist') or []) if result else [] %}
+{% set legacy = result.get('_is_legacy', false) if result else false %}
+<style>
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .form-group { display: flex; flex-direction: column; }
+    .form-group.full-width { grid-column: span 2; }
+    .form-group label { font-weight: bold; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea {
+        padding: 10px; border: 1px solid #000; font-size: 15px;
+    }
+    .form-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .fixed-value {
+        padding: 10px; border: 1px dashed #000; background: #f0f0f0;
+        font-size: 15px; font-weight: bold;
+    }
+    .record {
+        background: #fff; padding: 40px; border: 2px solid #000;
+    }
+    .record-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 16px; margin-bottom: 24px; }
+    .record-header h1 { margin: 0; font-size: 24px; color: #000; }
+    .record-header h2 { margin: 6px 0 0 0; font-size: 16px; font-weight: normal; }
+    .doc-badge {
+        display: inline-block; background: #000; color: #fff; padding: 4px 10px;
+        font-family: 'Courier New', monospace; letter-spacing: 1px; font-weight: bold; margin-top: 10px;
+    }
+    .meta-info { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 24px; font-size: 14px; }
+    .meta-info span { background: #f0f0f0; padding: 8px; }
+    .meta-info span strong { display: block; font-size: 11px; color: #555; margin-bottom: 2px; }
+    .section { margin-bottom: 24px; }
+    .section h3 { background: #000; color: #fff; padding: 8px 10px; margin: 0 0 12px 0; font-size: 14px; }
+    .section p { margin: 4px 0; font-size: 14px; }
+    .section p strong { display: inline-block; width: 300px; }
+    .section::after {
+        content: "Comments:";
+        display: block;
+        margin-top: 20px;
+        padding-bottom: 2px;
+        border-bottom: 1px solid #000;
+        font-size: 12px;
+    }
+    @page {
+        size: A4;
+        margin: 22mm 12mm 18mm 12mm;
+        @top-center {
+            content: "PsygaBio Production Calculator V5 — FACILITY EXTRACTION PRODUCTION PLAN";
+            font-family: Arial, sans-serif;
+            font-size: 9pt;
+            color: #000;
+        }
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-family: Arial, sans-serif;
+            font-size: 9pt;
+            color: #000;
+        }
+    }
+    .section table { width: 100%; }
+    .day-extraction { background: #e6e6e6; }
+    .day-evap { background: #ffffff; }
+    .day-extraction td, .day-evap td { font-size: 13px; }
+    .highlight { background: #f0f0f0; padding: 8px; border-left: 3px solid #000; margin-top: 12px; }
+    .legacy-note { background: #e6e6e6; border: 1px solid #555555; padding: 10px; font-size: 13px; margin-bottom: 16px; }
+    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; }
+    .signature-box { text-align: center; }
+    .signature-box .line { border-top: 1px solid #000; margin-top: 40px; padding-top: 5px; }
+    @media print {
+        body { background: #fff; }
+        .record { border: none; padding: 20px; }
+    }
+</style>
+
+<div class="card no-print">
+    <h1>Extraction Production Plan</h1>
+    <div class="tab-guide">
+        <h3>HOW TO USE THIS TAB</h3>
+        <ul>
+            <li><span class="guide-label">Mandatory:</span>
+                Production Lot #, Strain, Solvent Concentration (dropdown — all
+                options come from <code>config.yaml</code>) and Total Dried
+                Mushroom Powder (g). The lot is split into whole
+                <b>{{ portion_size_g | g }} g portions</b>, one portion per
+                {{ stock_bottle_volume_ml | int }} mL extraction bottle.</li>
+            <li><span class="guide-label">Optional:</span>
+                Grinder Loss Budget (g/round, default 10) and Yield Override
+                (concentration factor, e.g. 5 for 1:5 — leave blank for the
+                default 1:4).</li>
+            <li><span class="guide-label">Expected output:</span>
+                a printable Extraction Production Plan (EX doc number) with a
+                <b>per-bottle solvent preparation</b> (the formula and the
+                volumes for <i>one</i> bottle: how much MeOH to take out of the
+                2.5 L 100% stock bottle and how much water to put back in),
+                <b>lot totals</b> (bottles, stock bottles, MeOH, water,
+                expected extract) and a <b>calendar-day timeline</b> (each
+                round = one extraction day + one rotary-evaporation day),
+                plus Operator / QA / Date signature lines. Each bottle is
+                charged with {{ portion_size_g | g }} g of mushroom in
+                {{ 2400 }} mL of solvent — a 1:20 ratio. No partial-bottle
+                extraction: a leftover portion is documented and held.</li>
+        </ul>
+    </div>
+    <p style="color: var(--muted); margin-top: -8px;">
+        Portion-based multi-day / multi-round planning for a production lot.
+        Each round is one extraction day (grind, load, solvent, soak) plus
+        one rotary-evaporation day. Only whole {{ portion_size_g | g }} g
+        portions are extracted; any remainder is documented and held for QC.
+    </p>
+    <form method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="production_lot_number">Production Lot #</label>
+                <input type="text" id="production_lot_number" name="production_lot_number" required
+                       placeholder="e.g., LOT-2024-007"
+                       value="{{ request.form.production_lot_number or '' }}">
+                <span class="form-hint">Identifies the material and the extract lot.</span>
+            </div>
+            <div class="form-group">
+                <label for="strain">Strain</label>
+                <input type="text" id="strain" name="strain" required
+                       placeholder="e.g., P. cubensis"
+                       value="{{ request.form.strain or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="solvent_type">Solvent Concentration</label>
+                <select id="solvent_type" name="solvent_type" required>
+                    {# Options come from config.yaml
+                       (extraction_parameters.allowed_solvent_types) #}
+                    {% for st in solvent_types %}
+                    <option value="{{ st }}" {% if request.form.solvent_type == st %}selected{% endif %}>{{ st }} MeOH</option>
+                    {% endfor %}
+                </select>
+                <span class="form-hint">Strength of the MeOH stock bottle used on the bench.</span>
+            </div>
+            <div class="form-group">
+                <label for="dried_weight_total_g">Total Dried Mushroom Powder (g)</label>
+                <input type="number" id="dried_weight_total_g" name="dried_weight_total_g" required step="0.01" min="{{ portion_size_g }}"
+                       placeholder="e.g., 400"
+                       value="{{ request.form.dried_weight_total_g or '' }}">
+                <span class="form-hint">
+                    Total weight of the production lot. The plan splits it into whole
+                    {{ portion_size_g | g }} g portions; anything left over is held, not extracted.
+                </span>
+            </div>
+            <div class="form-group">
+                <label for="daily_bottle_count">Bottles per Extraction Day</label>
+                <input type="number" id="daily_bottle_count" name="daily_bottle_count" required min="1"
+                       placeholder="e.g., 2"
+                       value="{{ request.form.daily_bottle_count or '2' }}">
+                <span class="form-hint">
+                    How many bottles are loaded on each extraction day. Default 2.
+                </span>
+            </div>
+            <div class="form-group">
+                <label>Portion per Bottle (g)</label>
+                <div class="fixed-value">{{ portion_size_g | g }} g</div>
+                <span class="form-hint">
+                    GMP-fixed by <code>config.yaml</code>
+                    (<code>extraction_parameters.grams_per_bottle</code>). One bottle
+                    = one portion. Change only with QA approval.
+                </span>
+            </div>
+            <div class="form-group">
+                <label for="grinder_loss_per_round_g">Grinder Loss Budget (g/round)</label>
+                <input type="number" id="grinder_loss_per_round_g" name="grinder_loss_per_round_g" step="0.1" min="0"
+                       value="{{ request.form.grinder_loss_per_round_g or '10' }}">
+                <span class="form-hint">Mass expected to be lost during grinding, budgeted per round. Default 10g.</span>
+            </div>
+            <div class="form-group">
+                <label for="yield_override_factor">Yield Override (optional)</label>
+                <input type="number" id="yield_override_factor" name="yield_override_factor" step="0.01" min="0.1"
+                       placeholder="leave blank for default 1:4"
+                       value="{{ request.form.yield_override_factor or '' }}">
+                <span class="form-hint">Concentration factor from supervisor (e.g. 1:5 = enter 5). Default 1:4.</span>
+            </div>
+        </div>
+        <button type="submit" style="margin-top:18px;">Generate Extraction Production Plan</button>
+    </form>
+</div>
+
+{% if result %}
+{% if reprint %}
+{{ ex.reprint_banner(doc_number, result) }}
+{% endif %}
+{% if legacy %}
+<div class="legacy-note">
+    <b>Legacy document (calculator V{{ result.get('_calculator_version', '4') }}).</b>
+    This record was issued before V5.0 and is reproduced from its stored
+    ledger payload exactly as it was signed. The per-bottle solvent
+    preparation protocol and the portion-based totals below were not part of
+    that document.
+</div>
+{% endif %}
+<div class="record">
+    <div class="record-header">
+        <h1>FACILITY EXTRACTION PRODUCTION PLAN</h1>
+        <h2>Multi-Day Batch Schedule for Production Lot</h2>
+        <div class="doc-badge">DOC: {{ doc_number }}</div>
+        <p style="margin-top: 10px; font-size: 12px;">Generated: {{ result.timestamp }} by {{ current_user.username }} ({{ current_user.role }})</p>
+    </div>
+
+    <div class="meta-info">
+        <span><strong>Production Lot</strong>{{ result.get('production_lot_number', '—') }}</span>
+        <span><strong>Strain</strong>{{ result.get('strain', '—') }}</span>
+        <span><strong>Solvent</strong>{{ result.get('solvent_type', '—') }} MeOH</span>
+        <span><strong>Portion / Bottle</strong>{{ result.get('grams_per_bottle', portion_size_g) | g }} g</span>
+    </div>
+
+    <div class="section">
+        <h3>1. LOT SUMMARY</h3>
+        <p><strong>Total Dried Powder Available:</strong> {{ result.get('dried_weight_total_g', '—') | g }}g</p>
+        <p><strong>Portion Size:</strong> {{ result.get('grams_per_bottle', portion_size_g) | g }}g per bottle</p>
+        <p><strong>Total Bottles (portions):</strong> {{ result.get('total_bottles', totals.get('bottles', '—')) }}</p>
+        <p><strong>Total Powder Processed:</strong> {{ result.get('processed_weight_g', totals.get('mushroom_processed_g', '—')) | g }}g</p>
+        <p><strong>Bottles per Extraction Day:</strong> {{ result.get('daily_bottle_count', '—') }}</p>
+        <p><strong>Extraction Days:</strong> {{ result.get('extraction_days', totals.get('extraction_days', '—')) }}
+           &nbsp;&rarr;&nbsp; <strong>Total Procedure Time:</strong>
+           {{ result.get('total_procedure_days', totals.get('total_procedure_days', '—')) }} calendar days
+           (each round = 1 extraction day + 1 rotary-evaporation day)</p>
+        <p><strong>Yield Factor Used:</strong> 1:{{ result.get('yield_factor', '—') }}
+           {% if result.get('yield_override_used') %}<em>(supervisor override)</em>{% else %}<em>(config default)</em>{% endif %}
+        </p>
+        <p><strong>Expected Total Extract:</strong> {{ result.get('total_expected_extract_g', totals.get('expected_extract_g', '—')) | g }}g</p>
+        {% if result.get('leftover_weight_g', totals.get('leftover_g', 0)) > 0 %}
+        <div class="highlight">
+            <strong>LEFTOVER — NOT EXTRACTED:</strong>
+            {{ result.get('leftover_weight_g', totals.get('leftover_g', 0)) | g }}g of dried powder remains
+            after {{ result.get('total_bottles', totals.get('bottles', 0)) }} full
+            {{ result.get('grams_per_bottle', portion_size_g) | g }}g portions.
+            Insufficient for another full portion; hold for QC or keep for a future lot.
+            Documented here for traceability.
+        </div>
+        {% endif %}
+        {% if legacy %}
+        <p><strong>Legacy Pack Size:</strong> {{ result.get('pack_size_g', '—') }}g
+           &nbsp;&rarr;&nbsp; <strong>Total Packs:</strong> {{ result.get('total_packs', '—') }}</p>
+        <p><strong>Remainder Packs:</strong> {{ result.get('remainder_packs', '—') }}
+           ({{ result.get('remainder_weight_g', '—') }}g)</p>
+        {% endif %}
+    </div>
+
+    {% if per_bottle %}
+    <div class="section">
+        <h3>2. SOLVENT PREPARATION — PER BOTTLE</h3>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:10px;">
+            One bottle at a time. Repeat for every bottle in the lot; the lot
+            totals in section 3 are these values multiplied by the bottle count.
+        </p>
+        <p>
+            <strong>Stock bottle (100% MeOH):</strong>
+            {{ per_bottle.get('stock_bottle_volume_ml', stock_bottle_volume_ml) | g }} mL
+            &nbsp;&rarr;&nbsp; <strong>take out</strong>
+            <b>{{ per_bottle.get('meoh_remove_ml', '—') | g }} mL</b> of MeOH
+            &nbsp;&rarr;&nbsp; <strong>put back</strong>
+            <b>{{ per_bottle.get('water_add_ml', '—') | g }} mL</b> of water
+            &nbsp;&rarr;&nbsp; <b>{{ per_bottle.get('final_working_volume_ml', '—') | g }} mL</b>
+            of {{ result.get('solvent_type', '—') }} MeOH
+        </p>
+        <p>
+            <strong>Extraction bottle:</strong>
+            {{ per_bottle.get('mushroom_g', portion_size_g) | g }} g dried mushroom
+            + {{ per_bottle.get('stock_solvent_ml', '—') | g }} mL of
+            {{ result.get('solvent_type', '—') }} MeOH
+            = <b>{{ per_bottle.get('ratio_label', '—') }}</b> mushroom : solvent
+        </p>
+        <p style="font-size:13px; color:var(--muted); margin-top:10px;">
+            <strong>Formula:</strong>
+            MeOH to take out =
+            {{ per_bottle.get('stock_bottle_volume_ml', stock_bottle_volume_ml) | g }}
+            &minus;
+            {{ per_bottle.get('stock_solvent_ml', '—') | g }} &times; (%/100)
+            &nbsp;&rarr;&nbsp;
+            water to put back =
+            {{ per_bottle.get('stock_solvent_ml', '—') | g }} &times; (1 &minus; %/100)
+        </p>
+    </div>
+
+    <div class="section">
+        <h3>3. BOTTLES &amp; REAGENT TOTALS (whole lot)</h3>
+        <p><strong>Total Bottles (portions):</strong> {{ totals.get('bottles', '—')  | g }}</p>
+        <p><strong>Total Powder Processed:</strong> {{ totals.get('mushroom_processed_g', '—') | g }}g</p>
+        <p><strong>Leftover Held (not extracted):</strong> {{ totals.get('leftover_g', '—') | g }}g</p>
+        <p><strong>Total Solvent Charged:</strong> {{ totals.get('stock_solvent_ml', '—')  | g }} mL</p>
+        <p><strong>Stock Bottles Required:</strong> {{ totals.get('stock_bottles_required', '—')  | g }}
+           &times; {{ per_bottle.get('stock_bottle_volume_ml', stock_bottle_volume_ml)  | g }} mL MeOH stock</p>
+        <p><strong>Total MeOH to Remove:</strong> {{ totals.get('meoh_remove_ml', '—')  | g }} mL
+           <em>({{ per_bottle.get('meoh_remove_ml', '—')  | g }} mL per bottle)</em></p>
+        <p><strong>Total Water to Add:</strong> {{ totals.get('water_add_ml', '—')  | g }} mL
+           <em>({{ per_bottle.get('water_add_ml', '—')  | g }} mL per bottle)</em></p>
+        <p><strong>Expected Total Extract:</strong> {{ totals.get('expected_extract_g', '—') | g }}g</p>
+        <p><strong>Total Grinder Loss Budget:</strong> {{ totals.get('grinder_loss_budget_g', '—')  | g }}g</p>
+    </div>
+    {% endif %}
+
+    <div class="section">
+        <h3>{% if per_bottle %}4{% else %}2{% endif %}. TIMELINE — CALENDAR SCHEDULE</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Day</th>
+                    <th>Round</th>
+                    <th>Phase</th>
+                    <th>Bottles</th>
+                    <th>Mushroom (g)</th>
+                    <th>Solvent (mL)</th>
+                    <th>MeOH Out / bottle (mL)</th>
+                    <th>MeOH Out total (mL)</th>
+                    <th>H<sub>2</sub>O In / bottle (mL)</th>
+                    <th>H<sub>2</sub>O In total (mL)</th>
+                    <th>Expected Extract (g)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in timeline %}
+                {% set bottles = d.get('bottles', d.get('bottles_used', 0)) %}
+                <tr class="{{ 'day-extraction' if bottles > 0 else 'day-evap' }}">
+                    <td>{{ d.get('calendar_day', d.get('day', ''))  | g }}</td>
+                    <td>{{ d.get('round', '—')  | g }}</td>
+                    <td>{{ d.get('phase', '—') }}{% if d.get('phase_detail') %}<br><span style="font-size:11px; color:#555;">{{ d.get('phase_detail') }}</span>{% endif %}</td>
+                    <td>{{ bottles }}</td>
+                    <td>{{ d.get('mushroom_g', d.get('mushroom_weight_g', 0)) | g }}</td>
+                    <td>{{ d.get('solvent_ml', d.get('solvent_total_ml', 0))  | g }}</td>
+                    <td>{{ d.get('per_bottle_meoh_remove_ml', '—')  | g }}</td>
+                    <td>{{ d.get('meoh_remove_ml', 0)  | g }}</td>
+                    <td>{{ d.get('per_bottle_water_add_ml', '—')  | g }}</td>
+                    <td>{{ d.get('water_add_ml', 0)  | g }}</td>
+                    <td>{{ d.get('expected_extract_g', 0) | g }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p style="font-size:12px; color:var(--muted); margin-top:8px;">
+            Shaded rows are extraction days; white rows are rotary-evaporation
+            days. “per bottle” columns are the volumes for a single bottle as
+            defined in the solvent preparation protocol.
+        </p>
+    </div>
+
+    <div class="signature-line">
+        <div class="signature-box"><div class="line">Operator Signature</div></div>
+        <div class="signature-box"><div class="line">QA Signature</div></div>
+        <div class="signature-box"><div class="line">Date</div></div>
+    </div>
+</div>
+
+<div class="card no-print" style="text-align:center;">
+    <button onclick="window.print()">Print / Save as PDF</button>
+    <a href="{{ url_for('extraction') }}" class="btn btn-secondary">Clear / New Plan</a>
+</div>
+
+{{ ex.panel("extraction", result) }}
+{% endif %}
+{% endblock %}

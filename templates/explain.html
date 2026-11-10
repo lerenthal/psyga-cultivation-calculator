@@ -1,0 +1,146 @@
+{# Shared explanation panel - drop into any result page that wants it.    #}
+{# Usage: {% import "explain.html" as ex %}{{ ex.panel("cultivation", result) }} #}
+{# Printed as the trailing "*INDEX" section below the signatures.         #}
+
+{# REPRINT banner - shown above the document when the page is being   #}
+{# served by the /admin/history/reprint/<doc_number> route.            #}
+{# Usage: {{ ex.reprint_banner(doc_number, result) }}                  #}
+{% macro reprint_banner(doc_number, result) %}
+<div style="background:#000; color:#fff; border:2px solid #000; padding:10px 16px; margin-bottom:16px; font-weight:bold; text-align:center;">
+    REPRINT &mdash; NOT A NEW DOCUMENT. This is a reproduction of the
+    original protocol for record {{ doc_number }}, originally issued by
+    operator <b>{{ result._reprint_operator }}</b> on
+    {{ result.timestamp }}. No new ledger entry has been created.
+    <div style="margin-top:6px;"><a class="btn btn-secondary" style="font-weight:normal;" href="{{ url_for('admin_history_view', doc_number=doc_number) }}">&larr; Back to Audit View</a></div>
+</div>
+{% endmacro %}
+
+{% macro panel(kind, result) %}
+<div class="explain-panel" style="background:#fff; border:2px solid #000; padding:24px; margin-top:24px;">
+    <h2 style="margin-top:0;">*INDEX — Calculation &amp; Document Logic</h2>
+    <p style="color:var(--muted); margin-top:-6px;">
+        Index section printed below the signatures for operator reference:
+        how each form field is used and how every document section is
+        calculated.
+    </p>
+    {% if kind == "cultivation" %}
+        <h3 style="font-size:14px; color:#000; margin-bottom:6px;">Form fields &mdash; what the operator is entering</h3>
+        <ul>
+            <li><b>Strain</b> &mdash; Free-text mushroom strain identifier (e.g. <i>P. cubensis</i>). Carried into the doc header and the ledger.</li>
+            <li><b>Culture Lot #</b> &mdash; Lab-assigned lot number for the inoculum. Carried into the doc header.</li>
+            <li><b>Container Type</b> &mdash; Any container defined under <code>containers:</code> in <code>config.yaml</code> (e.g. <code>monotub</code>, <code>4liter_box</code>, <code>2liter_box</code>). Determines per-container substrate/spawn/LC masses. New containers are added via Settings &rarr; Configuration.</li>
+            <li><b>Avg Yield Fresh (g/container)</b> &mdash; Expected fresh mushroom yield per container. Drives dry yield via the dry-matter ratio. Required for the standard calculation; in reverse mode it only feeds the expected-yield estimate.</li>
+            <li><b>Target Dry Weight (g)</b> &mdash; Total dry mushroom you want to produce. Drives base container count. Required for the standard calculation; not used in reverse mode.</li>
+            <li><b>Spawn Bags Colonized + Spawn Bag Size (g)</b> &mdash; Optional, both-or-neither. When filled, the calculator reverse-engineers the workplan from spawn already colonized: containers = floor(bags &times; size / spawn-per-container), substrate is calculated for exactly those containers, and grain-spawn prep / liquid culture are shown as not required. The contamination buffer and target dry weight do not apply in reverse mode.</li>
+        </ul>
+        <h3 style="font-size:14px; color:#000; margin-bottom:6px;">Document sections &mdash; what is calculated and why</h3>
+        <ul>
+            <li><b>1. CONTAINER PREP</b>
+                <ul>
+                    <li>Dry yield/container = fresh &times; 0.07 (7% dry matter ratio, configurable)</li>
+                    <li>Base containers = target_dry_weight / dry_yield/container</li>
+                    <li>Total containers = ceil(base &times; 1.10) &mdash; the <b>10% contamination buffer</b> covers losses from contaminated jars, poor colonization, etc. This is why total &gt; base.</li>
+                </ul>
+            </li>
+            <li><b>2. BULK SUBSTRATE PREP</b>
+                <ul>
+                    <li>Total substrate = total_containers &times; substrate_per_container</li>
+                    <li>Buckets = ceil(total_substrate / 6300) &mdash; per-bucket recipe (SOP FORM-CULT-004) is 780g coir + 660g vermiculite + 60g gypsum + 4800ml water = <b>6300g net per bucket</b>. The number of buckets is rounded up so you always have a little extra.</li>
+                </ul>
+            </li>
+            <li><b>3. GRAIN SPAWN PREP</b>
+                <ul>
+                    <li>Total spawn = total_containers &times; spawn_per_container</li>
+                    <li>Grain batches = ceil(total_spawn / 10000) &mdash; each batch is 5000g grain + 10000ml water (SOP FORM-CULT-003: 5 kg : 10 L).</li>
+                </ul>
+            </li>
+            <li><b>4. INOCULATION &amp; BAGGING</b>
+                <ul>
+                    <li>Bag count = total_containers (one bag per container)</li>
+                    <li>LC per bag = configured per container type (e.g. 20ml for monotub)</li>
+                </ul>
+            </li>
+        </ul>
+    {% elif kind == "extraction" %}
+        <h3 style="font-size:14px; color:#000; margin-bottom:6px;">Form fields &mdash; what the operator is entering</h3>
+        <ul>
+            <li><b>Production Lot #</b> &mdash; Identifier for the whole extract lot (one CP record may pool several EX records). Carried into the doc and the ledger. In V5.0 this is also the lot number recorded in the master log: the separate &ldquo;Dry Mushroom Powder Lot #&rdquo; field has been removed.</li>
+            <li><b>Strain</b> &mdash; Same as cultivation.</li>
+            <li><b>Solvent Concentration</b> &mdash; 100% / 90% / 75% MeOH, from <code>allowed_solvent_types</code> in <code>config.yaml</code>. Sets the per-bottle water addition and MeOH removal.</li>
+            <li><b>Total Dried Mushroom Powder (g)</b> &mdash; Total weight of the production lot. The plan splits it into whole 120&nbsp;g portions; a partial portion is never extracted.</li>
+            <li><b>Bottles per Extraction Day</b> &mdash; How many bottles are loaded on each extraction day. Default 2. The last round may be partial (fewer bottles) when the lot does not divide evenly.</li>
+            <li><b>Portion per Bottle (g)</b> &mdash; GMP-fixed at 120&nbsp;g by <code>extraction_parameters.grams_per_bottle</code>. Shown read-only in the form; it is not an operator input in V5.0.</li>
+            <li><b>Grinder Loss Budget (g/round)</b> &mdash; Mass expected to be lost during grinding. Defaults to 10g per round. Reported as a budget; it is not subtracted from the portions.</li>
+            <li><b>Yield Override (optional)</b> &mdash; Supervisor-supplied concentration factor (e.g. 1:5 instead of default 1:4). Use this when historical data shows the actual concentration is different from the config default.</li>
+        </ul>
+        <h3 style="font-size:14px; color:#000; margin-bottom:6px;">Document sections &mdash; what is calculated and why</h3>
+        <ul>
+            <li><b>1. Lot summary</b>
+                <ul>
+                    <li>Total bottles = floor(total powder / 120&nbsp;g) &mdash; only whole portions are extracted.</li>
+                    <li>Powder processed = total bottles &times; 120&nbsp;g. Leftover = total powder &minus; powder processed; it is documented and held, never extracted (GMP: <b>no partial-bottle extraction</b>).</li>
+                    <li>Extraction days = ceil(total bottles / bottles per day). Total procedure days = extraction days &times; 2 (one extraction day + one rotary-evaporation day per round).</li>
+                </ul>
+            </li>
+            <li><b>2. Solvent preparation (per bottle)</b>
+                <ul>
+                    <li>The bench stock is a <b>2.5 L bottle of 100% MeOH</b>. The 2.4 L working volume is prepared from it by taking MeOH out and putting water back in:</li>
+                    <li>MeOH to take out = 2500 &minus; (2400 &times; %/100)</li>
+                    <li>water to put back = 2400 &times; (1 &minus; %/100)</li>
+                    <li>At 90% MeOH: <b>take out 340 mL, put back 240 mL</b> &rarr; 2400 mL at 90%. At 75%: take out 700, put back 600. At 100%: take out 100, put back 0.</li>
+                    <li>One extraction bottle is charged with <b>120 g of dried mushroom + 2400 mL</b> of that working volume &mdash; a mushroom : solvent ratio of <b>1:20</b>.</li>
+                </ul>
+            </li>
+            <li><b>3. Bottles &amp; reagent totals</b>
+                <ul>
+                    <li>Total MeOH to remove = per-bottle value &times; total bottles. Total water to add = per-bottle value &times; total bottles.</li>
+                    <li>Stock bottles required = ceil(total solvent charged / 2500&nbsp;mL) &mdash; how many 2.5&nbsp;L MeOH stock bottles to have on the bench.</li>
+                    <li>Expected total extract = total powder processed / yield factor. At the default 1:4, 360&nbsp;g processed &rarr; 90&nbsp;g extract (25% yield).</li>
+                </ul>
+            </li>
+            <li><b>4. Timeline</b>
+                <ul>
+                    <li>One row per calendar day. Extraction rows carry the bottle count, the grams loaded and the solvent volumes; evaporation rows carry no materials.</li>
+                    <li>Expected extract per extraction row = grams loaded that day / yield factor.</li>
+                </ul>
+            </li>
+        </ul>
+    {% elif kind == "capsulation" %}
+        <h3 style="font-size:14px; color:#000; margin-bottom:6px;">Form fields &mdash; what the operator is entering</h3>
+        <ul>
+            <li><b>Production Lot #</b> &mdash; Identifier for the production lot being capsulated. Carried into the doc and the ledger.</li>
+            <li><b>Source EX Doc Numbers</b> &mdash; Comma-separated list of EX records whose extract is pooled into this lot. <b>Required</b> &mdash; cross-tab traceability under GMP.</li>
+            <li><b>Total Extract (g)</b> &mdash; Pooled dry extract mass (sum of all upstream EX record outputs).</li>
+            <li><b>Dosage Mode</b> &mdash; <i>Psilocybin only</i> (psilocybin% alone) or <i>Total Psilocybin Equivalents (TPE)</i> (combined potency).</li>
+            <li><b>Psilocybin / Psilocin (%)</b> &mdash; Lab-measured active-ingredient content of the extract, expressed as percent of dry extract mass.</li>
+            <li><b>Anti-Caking Agent (% of blend)</b> &mdash; Default 5%. Applied to <b>blend</b> mass, not extract mass (pharmaceutical excipient convention).</li>
+            <li><b>Anti-Caking Agent Name</b> &mdash; Free text, e.g. fumed silica, MCC, starch.</li>
+        </ul>
+        <h3 style="font-size:14px; color:#000; margin-bottom:6px;">Document sections &mdash; what is calculated and why</h3>
+        <ul>
+            <li><b>Active-ingredient calculation</b>
+                <ul>
+                    <li>Psilocybin mass = extract &times; psilocybin% / 100</li>
+                    <li>Psilocin mass = extract &times; psilocin% / 100</li>
+                    <li>TPE% = psilocybin% + (psilocin% &times; 1.39)<br>
+                        <span style="color:var(--muted);">The 1.39 multiplier = MW<sub>psilocybin</sub> / MW<sub>psilocin</sub> = 284.25 / 204.27. It expresses psilocin content in psilocybin-equivalent potency.</span></li>
+                    <li>Active mass used = psilocybin mass (mode 1) <b>or</b> TPE mass (mode 2).</li>
+                </ul>
+            </li>
+            <li><b>Blend composition</b>
+                <ul>
+                    <li>Anti-caking: 5% of <b>blend</b> means anti_caking = extract &times; 5 / 95. At 100g extract + 5% blend anti-caking: anti_caking = 5.26g, blend = 105.26g.</li>
+                    <li>mg active per g blend = active_mg / blend_g. Used to back-calculate blend mass per capsule.</li>
+                </ul>
+            </li>
+            <li><b>Capsule specifications</b>
+                <ul>
+                    <li>Blend per capsule (mg) = dose_mg / (mg_active_per_g_blend / 1000) &mdash; tells the operator how many mg of blend to load into each capsule shell.</li>
+                    <li>Max capsules from lot = floor(blend_g &times; 1000 / blend_per_capsule_mg) &mdash; the maximum count of each capsule type if 100% of the lot went to that type. Operator decides the actual mix.</li>
+                </ul>
+            </li>
+            <li><b>Lot distribution plan</b> &mdash; blank rows for the operator to write the planned/actual capsule counts per type at the bench.</li>
+        </ul>
+    {% endif %}
+</div>
+{% endmacro %}

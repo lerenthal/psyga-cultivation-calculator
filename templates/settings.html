@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<style>
+    .user-row { vertical-align: top; }
+    .user-row form { margin: 4px 0; }
+    .user-row input[type="text"],
+    .user-row input[type="password"] {
+        padding: 4px 6px; border: 1px solid #000; font-size: 13px;
+    }
+    .user-row .pill {
+        display: inline-block; padding: 2px 8px;
+        font-size: 11px; font-weight: bold; letter-spacing: 0.5px;
+        border: 1px solid #000;
+    }
+    .pill-admin { background: #000; color: #fff; }
+    .pill-tech  { background: #e6e6e6; color: #000; }
+    .inline-btn {
+        padding: 4px 10px; font-size: 12px; border: 1px solid #000;
+        cursor: pointer; color: #fff; background: #000;
+    }
+    .btn-go    { background: #000; color: #fff; }
+    .btn-warn  { background: #fff; color: #000; font-weight: bold; }
+    .btn-danger{ background: #000; color: #fff; }
+    .btn-go:hover, .btn-warn:hover, .btn-danger:hover { background: #333; }
+    .actions { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+    #config_editor {
+        width: 100%; min-height: 420px; box-sizing: border-box;
+        font-family: Consolas, "Courier New", monospace; font-size: 13px; line-height: 1.45;
+        padding: 10px; border: 2px solid #000;
+        background: #fff; color: #000;
+    }
+</style>
+
+<div class="card">
+    <h1>Settings</h1>
+    <p style="color: var(--muted); margin-top:-6px;">
+        Admin-only page. Edit calculation options in <b>config.yaml</b> below
+        (no server access or restart needed — changes take effect on the next
+        page load), and manage user accounts. Every saved config change is
+        backed up and recorded in the history at the bottom.
+    </p>
+</div>
+
+<div class="card">
+    <h2>Configuration (config.yaml)</h2>
+    <p style="color: var(--muted);">
+        Edit the whole file, then <b>Save Config</b>. The new text is checked
+        before anything is written: invalid YAML or an invalid value (for
+        example a container missing <code>substrate</code>, <code>spawn</code>
+        or <code>liquid_culture</code>) is rejected with a message naming the
+        exact key, and the current file is left untouched. On a successful
+        save the previous file is backed up to
+        <code>config_backups/</code> and the change is recorded below.
+    </p>
+    <form method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="save_config">
+        <textarea id="config_editor" name="config_text" spellcheck="false">{{ config_text }}</textarea>
+        <div style="margin-top: 10px;">
+            <button type="submit">Save Config</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Config Change History</h2>
+    {% if config_changes %}
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 22%;">When (UTC)</th>
+                <th style="width: 18%;">Saved by</th>
+                <th style="width: 60%;">Backup of previous config</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in config_changes %}
+            <tr>
+                <td>{{ c.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td>{{ c.username }}</td>
+                <td>{{ c.backup_file or '— (no previous file)' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--muted);">No config changes saved through this page yet.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>User Management</h2>
+    <p style="color: var(--muted); margin-top:-6px;">
+        {{ users|length }} user{{ '' if users|length == 1 else 's' }} in the system.
+        All batch records reference the operator by username, so removing a user
+        does not delete their historical entries.
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 16%;">Username</th>
+                <th style="width: 12%;">Role</th>
+                <th style="width: 36%;">Reset Password</th>
+                <th style="width: 20%;">Change Role</th>
+                <th style="width: 16%;">Delete</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr class="user-row">
+                <td><b>{{ u.username }}</b><br><span style="font-size:11px; color:#888;">id: {{ u.id }}</span></td>
+                <td>
+                    <span class="pill {{ 'pill-admin' if u.role in ('administrator', 'admin') else 'pill-tech' }}">{{ role_label(u.role) }}</span>
+                </td>
+                <td>
+                    <form method="POST" style="display:flex; gap:6px; align-items:center;">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="action" value="reset_password">
+                        <input type="hidden" name="user_id" value="{{ u.id }}">
+                        <input type="password" name="password" placeholder="new password" required minlength="6">
+                        <button class="inline-btn btn-warn" type="submit">Reset</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="POST" style="display:flex; gap:6px; align-items:center;">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="action" value="change_role">
+                        <input type="hidden" name="user_id" value="{{ u.id }}">
+                        <select name="role" style="padding:4px 6px; border:1px solid var(--border); border-radius:3px;">
+                            {% for value, label in roles %}
+                            <option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                            {% if u.role not in roles|map(attribute=0)|list %}
+                            <option value="{{ u.role }}" selected>{{ role_label(u.role) }} (legacy)</option>
+                            {% endif %}
+                        </select>
+                        <button class="inline-btn btn-go" type="submit">Apply</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="POST" onsubmit="return confirm('Delete user {{ u.username }}? This cannot be undone.');">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="user_id" value="{{ u.id }}">
+                        <button class="inline-btn btn-danger" type="submit">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Add New User</h2>
+    <form method="POST" style="display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:12px; align-items:end; max-width: 720px;">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="create">
+        <div>
+            <label style="font-weight:bold; display:block; margin-bottom:4px;">Username</label>
+            <input type="text" name="username" required minlength="2"
+                   style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px;">
+        </div>
+        <div>
+            <label style="font-weight:bold; display:block; margin-bottom:4px;">Password</label>
+            <input type="password" name="password" required minlength="6"
+                   style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px;">
+        </div>
+        <div>
+            <label style="font-weight:bold; display:block; margin-bottom:4px;">Role</label>
+            <select name="role" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px;">
+                {% for value, label in roles %}
+                <option value="{{ value }}" {% if value == 'user' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit">Create User</button>
+    </form>
+</div>
+{% endblock %}

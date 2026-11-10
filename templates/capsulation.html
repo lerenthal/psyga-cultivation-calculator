@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}Capsulation Production Record (CP){% endblock %}
+{% block content %}
+{% import "explain.html" as ex %}
+<style>
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .form-group { display: flex; flex-direction: column; }
+    .form-group.full-width { grid-column: span 2; }
+    .form-group label { font-weight: bold; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea {
+        padding: 10px; border: 1px solid #000; font-size: 15px;
+    }
+    .form-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .record { background: #fff; padding: 40px; border: 2px solid #000; }
+    .record-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 16px; margin-bottom: 24px; }
+    .record-header h1 { margin: 0; font-size: 24px; color: #000; }
+    .record-header h2 { margin: 6px 0 0 0; font-size: 16px; font-weight: normal; }
+    .doc-badge {
+        display: inline-block; background: #000; color: #fff; padding: 4px 10px;
+        font-family: 'Courier New', monospace; letter-spacing: 1px; font-weight: bold; margin-top: 10px;
+    }
+    .meta-info { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 24px; font-size: 14px; }
+    .meta-info span { background: #f0f0f0; padding: 8px; }
+    .meta-info span strong { display: block; font-size: 11px; color: #555; margin-bottom: 2px; }
+    .section { margin-bottom: 24px; }
+    .section h3 { background: #000; color: #fff; padding: 8px 10px; margin: 0 0 12px 0; font-size: 14px; }
+    .section p { margin: 4px 0; font-size: 14px; }
+    .section p strong { display: inline-block; width: 320px; }
+    .section::after {
+        content: "Comments:";
+        display: block;
+        margin-top: 20px;
+        padding-bottom: 2px;
+        border-bottom: 1px solid #000;
+        font-size: 12px;
+    }
+    @page {
+        size: A4;
+        margin: 22mm 12mm 18mm 12mm;
+        @top-center {
+            content: "PsygaBio Production Calculator V5 — FACILITY CAPSULATION PRODUCTION RECORD";
+            font-family: Arial, sans-serif;
+            font-size: 9pt;
+            color: #000;
+        }
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-family: Arial, sans-serif;
+            font-size: 9pt;
+            color: #000;
+        }
+    }
+    .section table { width: 100%; }
+    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; }
+    .signature-box { text-align: center; }
+    .signature-box .line { border-top: 1px solid #000; margin-top: 40px; padding-top: 5px; }
+    .mode-active-mass {
+        background: #f0f0f0; padding: 8px 12px; border-left: 3px solid #000;
+        margin: 8px 0; font-size: 14px;
+    }
+    @media print {
+        body { background: #fff; }
+        .record { border: none; padding: 20px; }
+    }
+</style>
+
+<div class="card no-print">
+    <h1>Capsulation Production Record</h1>
+    <div class="tab-guide">
+        <h3>HOW TO USE THIS TAB</h3>
+        <ul>
+            <li><span class="guide-label">Mandatory:</span>
+                Production Lot #, Source EX Doc Numbers (comma-separated, at least one),
+                Total Extract (g), Dosage Calculation Mode (dropdown — all options come from
+                <code>config.yaml</code>), Psilocybin % and Psilocin % of the extract.</li>
+            <li><span class="guide-label">Optional:</span>
+                Anti-Caking Agent (% of blend, default 5%) and Anti-Caking Agent Name
+                (e.g. fumed silica, MCC).</li>
+            <li><span class="guide-label">Expected output:</span>
+                a printable Capsulation Production Record (CP doc number) cross-referencing the
+                upstream EX records, with the active-ingredient calculation (incl. TPE),
+                blend composition, and a capsule-specification table (per capsule type: target
+                dose, blend mass per capsule, maximum capsules from the lot), plus
+                Operator / QA / Date signature lines.</li>
+        </ul>
+    </div>
+    <p style="color: var(--muted); margin-top: -8px;">
+        Calculates blend composition, capsule-fill masses, and maximum
+        capsule counts from a pooled dry-extract lot. Cross-references
+        the upstream extraction records (EX doc numbers) for
+        traceability.
+    </p>
+    <form method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="production_lot_number">Production Lot #</label>
+                <input type="text" id="production_lot_number" name="production_lot_number" required
+                       placeholder="e.g., LOT-2024-007"
+                       value="{{ request.form.production_lot_number or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="source_ex_doc_numbers">Source EX Doc Numbers</label>
+                <input type="text" id="source_ex_doc_numbers" name="source_ex_doc_numbers" required
+                       placeholder="e.g., EX-20260609-001, EX-20260610-002"
+                       value="{{ request.form.source_ex_doc_numbers or '' }}">
+                <span class="form-hint">Comma-separated list of EX records whose extract is pooled into this lot. Required.</span>
+            </div>
+            <div class="form-group">
+                <label for="grams_of_extract">Total Extract (g)</label>
+                <input type="number" id="grams_of_extract" name="grams_of_extract" required step="0.01" min="0.01"
+                       placeholder="e.g., 100"
+                       value="{{ request.form.grams_of_extract or '' }}">
+                <span class="form-hint">Pooled dry extract mass from all upstream extraction rounds.</span>
+            </div>
+            <div class="form-group">
+                <label for="dosage_mode">Dosage Calculation Mode</label>
+                <select id="dosage_mode" name="dosage_mode" required>
+                    {# V2.0: options come from config.yaml
+                       (capsulation_parameters.dosage_modes); the first
+                       entry is the default when the form is blank #}
+                    {% for mode in dosage_modes %}
+                    <option value="{{ mode.id }}"
+                        {% if request.form.dosage_mode == mode.id or (not request.form.dosage_mode and loop.first) %}selected{% endif %}>
+                        {{ mode.label }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <span class="form-hint">TPE = psilocybin + (psilocin &times; 1.39) for potency equivalence.</span>
+            </div>
+            <div class="form-group">
+                <label for="psilocybin_pct">Psilocybin (% of extract)</label>
+                <input type="number" id="psilocybin_pct" name="psilocybin_pct" required step="0.01" min="0"
+                       placeholder="e.g., 1.2"
+                       value="{{ request.form.psilocybin_pct or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="psilocin_pct">Psilocin (% of extract)</label>
+                <input type="number" id="psilocin_pct" name="psilocin_pct" required step="0.01" min="0"
+                       placeholder="e.g., 0.4"
+                       value="{{ request.form.psilocin_pct or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="anti_caking_pct">Anti-Caking Agent (% of blend)</label>
+                <input type="number" id="anti_caking_pct" name="anti_caking_pct" step="0.01" min="0" max="99"
+                       value="{{ request.form.anti_caking_pct or '5.0' }}">
+                <span class="form-hint">Default 5%. Applied to BLEND mass per pharmaceutical excipient convention.</span>
+            </div>
+            <div class="form-group">
+                <label for="anti_caking_agent_name">Anti-Caking Agent Name</label>
+                <input type="text" id="anti_caking_agent_name" name="anti_caking_agent_name"
+                       placeholder="e.g., fumed silica, MCC"
+                       value="{{ request.form.anti_caking_agent_name or '' }}">
+            </div>
+        </div>
+        <button type="submit" style="margin-top:18px;">Generate Capsulation Record</button>
+    </form>
+</div>
+
+{% if result %}
+{% if reprint %}
+{{ ex.reprint_banner(doc_number, result) }}
+{% endif %}
+<div class="record">
+    <div class="record-header">
+        <h1>FACILITY CAPSULATION PRODUCTION RECORD</h1>
+        <h2>Blend Calculation &amp; Capsule-Fill Specification</h2>
+        <div class="doc-badge">DOC: {{ doc_number }}</div>
+        <p style="margin-top: 10px; font-size: 12px;">Generated: {{ result.timestamp }} by {{ current_user.username }} ({{ current_user.role }})</p>
+    </div>
+
+    <div class="meta-info">
+        <span><strong>Production Lot</strong>{{ result.production_lot_number }}</span>
+        <span><strong>Extract (g)</strong>{{ result.grams_of_extract }}</span>
+        <span><strong>Dosage Mode</strong>{{ result.dosage_mode.replace('_', ' ').upper() }}</span>
+        <span><strong>Anti-Caking</strong>{{ result.anti_caking_pct }}%</span>
+    </div>
+
+    <div class="section">
+        <h3>1. SOURCE TRACEABILITY</h3>
+        <p><strong>Upstream EX Records:</strong> {{ result.source_ex_doc_numbers }}</p>
+    </div>
+
+    <div class="section">
+        <h3>2. ACTIVE-INGREDIENT CALCULATION</h3>
+        <p><strong>Psilocybin in Lot:</strong> {{ result.psilocybin_pct }}% &rarr; {{ result.psilocybin_mass_g }}g</p>
+        <p><strong>Psilocin in Lot:</strong> {{ result.psilocin_pct }}% &rarr; {{ result.psilocin_mass_g }}g</p>
+        <p><strong>MW Ratio (psilocybin / psilocin):</strong> {{ result.mw_ratio }} (284.25 / 204.27)</p>
+        <p><strong>TPE% = psilocybin% + (psilocin% &times; 1.39):</strong>
+            {{ result.psilocybin_pct }} + ({{ result.psilocin_pct }} &times; {{ result.mw_ratio }})
+            = <b>{{ result.tpe_pct }}%</b> &rarr; {{ result.tpe_mass_g }}g</p>
+        <div class="mode-active-mass">
+            <strong>Active mass used for dose calculation ({{ result.active_label }}):</strong>
+            {{ result.active_mass_g }}g = <b>{{ result.active_mg }} mg</b>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>3. BLEND COMPOSITION</h3>
+        <p><strong>Extract:</strong> {{ result.grams_of_extract }}g</p>
+        <p><strong>Anti-Caking Agent
+            {% if result.anti_caking_agent %}({{ result.anti_caking_agent }}){% endif %}:
+        </strong>
+            {{ result.anti_caking_pct }}% of blend &rarr;
+            {{ result.anti_caking_g }}g
+            (={{ result.anti_caking_of_extract_pct }}% of extract)</p>
+        <p><strong>Total Blend:</strong> <b>{{ result.blend_g }}g</b></p>
+        <p><strong>mg active per g blend:</strong> {{ result.mg_active_per_g_blend }} mg/g</p>
+    </div>
+
+    <div class="section">
+        <h3>4. CAPSULE SPECIFICATIONS</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Capsule Type</th>
+                    <th>Target Dose</th>
+                    <th>Blend Mass per Capsule</th>
+                    <th>Max Capsules from Lot (100%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in result.capsule_table %}
+                <tr>
+                    <td><b>Type {{ c.type }}</b> ({{ c.label }})</td>
+                    <td>{{ c.target_dose_mg }} mg active</td>
+                    <td>{{ c.blend_per_capsule_mg }} mg blend</td>
+                    <td>{{ c.max_capsules_from_lot }} capsules</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="signature-line">
+        <div class="signature-box"><div class="line">Operator Signature</div></div>
+        <div class="signature-box"><div class="line">QA Signature</div></div>
+        <div class="signature-box"><div class="line">Date</div></div>
+    </div>
+</div>
+
+<div class="card no-print" style="text-align:center;">
+    <button onclick="window.print()">Print / Save as PDF</button>
+    <a href="{{ url_for('capsulation') }}" class="btn btn-secondary">Clear / New Record</a>
+</div>
+
+{{ ex.panel("capsulation", result) }}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Admin Master Logs{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>Admin Master Logs</h1>
+    <p style="color: var(--muted);">
+        Immutable ledger of all generated Facility Working Protocols (WP) and
+        Facility Extraction Batch Records (EX). Rows are append-only.
+    </p>
+
+    {% if entries %}
+    <table>
+        <thead>
+            <tr>
+                <th>Doc #</th>
+                <th>Type</th>
+                <th>Timestamp (UTC)</th>
+                <th>Operator</th>
+                <th>Strain</th>
+                <th>Lot #</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in entries %}
+            <tr>
+                <td><code>{{ e.doc_number }}</code></td>
+                <td>{{ e.batch_type }}</td>
+                <td>{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td>
+                    {{ e.user.username }}
+                    {% if e.user.role == 'admin' %}<span style="font-size:11px; color:#888;">(admin)</span>{% endif %}
+                </td>
+                <td>{{ e.strain or '-' }}</td>
+                <td>{{ e.lot_number or '-' }}</td>
+                <td>
+                    <a class="btn btn-secondary" style="padding:6px 10px; font-size:13px;"
+                       href="{{ url_for('admin_history_view', doc_number=e.doc_number) }}">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p>No batch records yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
