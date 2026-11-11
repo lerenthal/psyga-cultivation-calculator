@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Server Control Panel{% endblock %}
+
+{% macro csrf_input() %}
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+{% endmacro %}
+
+{% block content %}
+<section class="hostbar">
+  <div class="host-info">
+    <div><span class="k">Host</span><span class="v">{{ hostname }}</span></div>
+    <div><span class="k">OS</span><span class="v">{{ platform_name }}</span></div>
+    <div><span class="k">Backend</span><span class="v">{{ backend.platform }}</span></div>
+    <div><span class="k">Panel</span><span class="v">:{{ panel_port }}</span></div>
+  </div>
+  <div class="host-ips">
+    <span class="k">Reach this panel at</span>
+    {% for ip in addresses %}
+      <a class="ip" href="http://{{ ip }}:{{ panel_port }}/" target="_blank" rel="noreferrer">{{ ip }}:{{ panel_port }}</a>
+    {% else %}
+      <span class="ip muted">no non-loopback address found</span>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="summary" id="summary">
+  {% set running = entries | selectattr('state', 'equalto', 'running') | list %}
+  <span class="stat"><b>{{ running | length }}</b> running</span>
+  <span class="stat"><b>{{ entries | length }}</b> registered</span>
+  <span class="stat" id="last-refresh">updating…</span>
+  <button class="btn btn-ghost" id="refresh-btn" type="button">Refresh now</button>
+</section>
+
+<section class="apps" id="apps">
+  {% for entry in entries %}
+  <article class="app" id="app-{{ entry.name }}">
+    <header class="app-head">
+      <div>
+        <h2>{{ entry.name }}</h2>
+        <p class="muted">{{ entry.spec.description or '—' }}
+          {% if entry.spec.category %}<span class="tag">{{ entry.spec.category }}</span>{% endif %}
+        </p>
+      </div>
+      <span class="state state-{{ entry.state }}">{{ entry.state }}</span>
+    </header>
+
+    {% if entry.error %}
+      <div class="alert">{{ entry.error }}</div>
+    {% endif %}
+
+    <dl class="facts">
+      <div><dt>PID</dt><dd data-f="pid">{{ entry.pid or '—' }}</dd></div>
+      <div><dt>Uptime</dt><dd data-f="uptime">{{ entry.uptime_text }}</dd></div>
+      <div><dt>Memory</dt><dd data-f="memory">{{ entry.memory_text }}</dd></div>
+      <div><dt>HTTP</dt><dd data-f="http">{% if entry.http_status %}{{ entry.http_status }}{% if entry.http_latency_ms is not none %} · {{ entry.http_latency_ms }} ms{% endif %}{% else %}—{% endif %}</dd></div>
+      <div><dt>Ports</dt><dd data-f="ports">
+        {% if entry.ports %}
+          {% for p in entry.ports %}<span class="port">{{ p.address }}:{{ p.port }}</span>{% endfor %}
+        {% else %}—{% endif %}
+      </dd></div>
+      <div><dt>Service</dt><dd>{{ entry.spec.service_name }}{% if entry.spec.service_scope and backend.platform == 'linux' %} <span class="muted">({{ entry.spec.service_scope }})</span>{% endif %}</dd></div>
+    </dl>
+
+    <div class="controls">
+      <form method="POST" action="{{ url_for('api_action', name=entry.name) }}" class="inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="action" value="start">
+        <button class="btn" type="submit">Start</button>
+      </form>
+      <form method="POST" action="{{ url_for('api_action', name=entry.name) }}" class="inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="action" value="stop">
+        <button class="btn" type="submit">Stop</button>
+      </form>
+      <form method="POST" action="{{ url_for('api_action', name=entry.name) }}" class="inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="action" value="restart">
+        <button class="btn btn-primary" type="submit">Restart</button>
+      </form>
+
+      <form method="POST" action="{{ url_for('api_action', name=entry.name) }}" class="inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="action" value="{{ 'autostart_off' if entry.autostart else 'autostart_on' }}">
+        <button class="btn btn-ghost" type="submit">
+          Autostart: {{ 'ON' if entry.autostart else 'off' }}
+        </button>
+      </form>
+
+      {% if backend.platform == 'linux' %}
+      <form method="POST" action="{{ url_for('api_action', name=entry.name) }}" class="inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="action" value="install_service">
+        <button class="btn btn-ghost" type="submit">Install service</button>
+      </form>
+      {% endif %}
+
+      <button class="btn btn-ghost logs-toggle" type="button" data-app="{{ entry.name }}">Logs</button>
+    </div>
+
+    <details class="logs" id="logs-{{ entry.name }}" hidden>
+      <pre>loading…</pre>
+    </details>
+  </article>
+  {% else %}
+    <p class="empty">No applications are registered yet — add one under <b>Applications</b>.</p>
+  {% endfor %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='panel.js') }}"></script>
+{% endblock %}

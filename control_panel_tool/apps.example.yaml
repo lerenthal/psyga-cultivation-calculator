@@ -1,0 +1,63 @@
+# Server Control Panel - example registry entries
+#
+# Copy the entries you want into apps.yaml (or add them from the
+# "Applications" page in the panel).
+#
+#   Ubuntu / Linux (systemd):
+apps:
+  - name: psyga-bio
+    description: PsygaBio Production System V5 - GMP batch calculators
+    working_dir: /opt/psyga/ver5
+    start_command: [".venv/bin/python", "app.py"]
+    env:
+      PORT: "5001"
+      HOST: "0.0.0.0"
+      LOG_FILE: /opt/psyga/ver5/app.log
+    ports: [5001]
+    health_url: http://127.0.0.1:5001/login
+    service_name: psyga-bio
+    service_scope: user
+    autostart: true
+    category: production
+
+  - name: my-django-app
+    description: Example Django site
+    working_dir: /opt/django/myproject
+    start_command: [".venv/bin/python", "manage.py", "runserver", "0.0.0.0:8000"]
+    env:
+      DJANGO_SETTINGS_MODULE: myproject.settings
+    ports: [8000]
+    health_url: http://127.0.0.1:8000/
+    service_name: my-django-app
+    service_scope: user
+    autostart: true
+    category: production
+
+  - name: my-streamlit-app
+    description: Example Streamlit dashboard
+    working_dir: /opt/streamlit/app
+    start_command: [".venv/bin/python", "-m", "streamlit", "run", "app.py",
+                    "--server.address=0.0.0.0", "--server.port=8501"]
+    ports: [8501]
+    health_url: http://127.0.0.1:8501/_stcore/health
+    service_name: my-streamlit-app
+    service_scope: user
+    autostart: false
+    category: tooling
+
+  #   Windows (background process):
+  # - name: psyga-bio
+  #   description: PsygaBio Production System V5 - GMP batch calculators
+  #   working_dir: E:\hermes_projects\order_form_app\ver5
+  #   start_command: [".venv/Scripts/python.exe", "app.py"]
+  #   env:
+  #     PORT: "5001"
+  #     HOST: "0.0.0.0"
+  #     PROCESS_MATCH: "app.py"
+  #     LOG_FILE: E:\hermes_projects\order_form_app\ver5\v5_run.err
+  #   ports: [5001]
+  #   health_url: http://127.0.0.1:5001/login
+  #   service_name: psyga-bio
+  #   service_scope: user
+  #   autostart: false
+  #   category: production

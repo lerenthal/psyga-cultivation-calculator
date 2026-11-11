@@ -10,6 +10,14 @@ every issuance is written to an append-only SQLite ledger.
 | Extraction | `/extraction` | `EX-YYYYMMDD-NNN` | Facility Extraction Batch Record |
 | Capsulation | `/capsulation` | `CP-YYYYMMDD-NNN` | Capsulation batch record |
 
+> **Companion tool:** this repository also ships
+> **[`control_panel_tool/`](control_panel_tool/)** — a small web dashboard
+> that shows whether your applications are running, on which port and IP,
+> and gives you one-click **Start / Stop / Restart** plus a toggle that
+> makes an app **come back automatically after a reboot**. It is generic:
+> it manages any Python application on the server, not just this one.
+> See [Server Control Panel](#server-control-panel-auxiliary-tool) below.
+
 ## V5.0 changes
 
 **Extraction is now portion-based.** The unit of production is one whole
@@ -239,13 +247,121 @@ V2.0 — but run from the project directory anyway for consistency.)
 See `quickstart.md` for the calculation flow of each tab, the audit
 ledger, and configuration reference.
 
+## Server Control Panel (auxiliary tool)
+
+[`control_panel_tool/`](control_panel_tool/) holds a second, independent
+Flask application: a **control dashboard for the Python applications
+installed on a machine**. It is deliberately generic — the PsygaBio app
+is just one entry in its registry, and the same panel can watch and
+control a Django site, a Streamlit dashboard, a FastAPI service or
+anything else that runs as a process.
+
+### What it shows
+
+For every registered application, one card with:
+
+* **status** — running / stopped / failed, refreshed live every 5 s
+* **PID** and **uptime**
+* **memory** in use
+* **the ports it listens on**, with the bound address (`0.0.0.0:5001`)
+* **HTTP health** — the status code and latency of a probe URL
+* **the server's own addresses**, so you know which URL to open from
+  another machine
+* the last lines of its log
+
+### What you can do
+
+| Action | Effect |
+|---|---|
+| **Start / Stop / Restart** | one click, no SSH session needed |
+| **Autostart: on/off** | make the app come back automatically after a reboot |
+| **Install service** | (Linux) write a systemd unit for an app that does not have one yet |
+| **Logs** | the last N lines, on demand |
+
+### How it works on each platform
+
+* **Ubuntu** — it drives **systemd**. Status comes from `systemctl show`,
+  the ports from `ss -lntp`, the logs from `journalctl`, and
+  "autostart" is `systemctl enable`. Units can be user-scoped
+  (`systemctl --user`, no root needed) or system-scoped (`sudo systemctl`).
+* **Windows** — there is no systemd, so it does what an operator would do
+  by hand: finds the process by matching its command line, reads the
+  ports from `netstat -ano`, starts the app detached with the project's
+  own virtualenv, stops it with `taskkill /T`, and writes a small
+  VBScript into the per-user **Startup folder** for autostart (a Windows
+  scheduled task would need administrator rights).
+
+### Running it
+
+```bash
+cd control_panel_tool
+./deploy/install_ubuntu.sh        # Ubuntu: user-level systemd, no root needed
+# or
+sudo ./deploy/install_ubuntu.sh --system
+```
+
+```powershell
+cd control_panel_tool
+uv venv
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+$env:PANEL_PASSWORD = "choose-something-strong"
+.\run.ps1                          # http://<server-ip>:5050
+```
+
+The password comes from `PANEL_PASSWORD`; without it the panel generates
+one, prints it once and stores it in `instance/panel_password.txt`.
+
+### The registry — `apps.yaml`
+
+One entry per application; this is the whole configuration surface.
+
+| Field | Meaning |
+|---|---|
+| `name` | unique id; also the systemd unit / startup entry name |
+| `description` | shown on the card |
+| `working_dir` | where the app lives (the panel starts it here) |
+| `start_command` | argv list, e.g. `[".venv/bin/python", "app.py"]` |
+| `env` | environment for the process. Windows also reads `PROCESS_MATCH` (a substring of the command line used to find the process), `PID_FILE` and `LOG_FILE` |
+| `ports` | the ports the app is expected to listen on |
+| `health_url` | URL probed for liveness |
+| `service_name` | systemd unit / startup entry name (defaults to `name`) |
+| `service_scope` | Linux only: `user` (no root) or `system` (sudo) |
+| `autostart` | start automatically after a reboot |
+| `category` | free grouping label |
+
+`control_panel_tool/apps.example.yaml` has ready-made entries for Flask,
+Django and Streamlit.
+
+### Safety
+
+* The panel can only act on applications **declared in `apps.yaml`** —
+  there is deliberately **no "run this command" endpoint**. The only
+  commands it can run are the fixed ones the backend defines.
+* Everything is behind a **password** (session cookie, `HttpOnly` +
+  `SameSite=Lax`) and every state-changing request needs a **CSRF
+  token**.
+* For a public server, put it behind **nginx + TLS**
+  (`control_panel_tool/deploy/nginx-control-panel.conf` is a ready-made
+  site) and set `PANEL_PASSWORD` from an environment file.
+
+Full details, the API and the test suite are in
+[`control_panel_tool/README.md`](control_panel_tool/README.md).
+
 ## Layout
 
 ```
-app.py            # factory, models, calculator engines, routes
-config.yaml       # production parameters (containers, recipes, extraction)
-templates/        # base + one template per page; print CSS hides forms
-tests/test_app.py # pytest suite (in-memory DB)
-instance/         # psyga_gmp.db (git-ignored)
+app.py                 # factory, models, calculator engines, routes
+config.yaml            # production parameters (containers, recipes, extraction)
+templates/             # base + one template per page; print CSS hides forms
+tests/test_app.py      # pytest suite (in-memory DB) - 184 tests
+instance/              # psyga_gmp.db (git-ignored)
+control_panel_tool/    # the auxiliary Server Control Panel (see above)
+├── dashboard.py       #   entry point (also works as dashboard:app)
+├── apps.yaml          #   the registry of managed applications
+├── apps.example.yaml  #   ready-made Flask / Django / Streamlit examples
+├── panel/             #   the code (app, models, registry, backends)
+├── templates/ static/ #   the dashboard UI
+├── deploy/            #   systemd units, nginx site, Ubuntu installer
+└── tests/             #   pytest suite - 46 tests
 ```
 

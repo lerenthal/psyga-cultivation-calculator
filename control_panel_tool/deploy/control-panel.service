@@ -1,0 +1,21 @@
+[Unit]
+Description=Server Control Panel
+Documentation=https://github.com/lerenthal/psyga-cultivation-calculator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/server_control_panel
+ExecStart=%h/server_control_panel/.venv/bin/python dashboard.py
+Environment=PANEL_HOST=0.0.0.0
+Environment=PORT=5050
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

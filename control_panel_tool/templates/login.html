@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Server Control Panel{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <form class="card login-card" method="POST">
+    {{ csrf_input() }}
+    <h1>Control Panel</h1>
+    <p class="muted">Enter the panel password to manage the applications on this server.</p>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autofocus>
+    <button type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}

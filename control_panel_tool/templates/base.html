@@ -1,0 +1,46 @@
+{% macro csrf_input() %}
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+{% endmacro %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}Server Control Panel{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}">
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">
+        <span class="logo">◉</span>
+        <span>SERVER CONTROL PANEL</span>
+    </div>
+    <nav>
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('apps') }}">Applications</a>
+        <a href="{{ url_for('logout') }}">Sign out</a>
+    </nav>
+</header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flashes">
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+    <span>backend: <b>{{ panel_backend.platform }}</b></span>
+    <span>panel is protected by a password and CSRF tokens</span>
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

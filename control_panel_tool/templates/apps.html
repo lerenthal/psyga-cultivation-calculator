@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Applications — Server Control Panel{% endblock %}
+
+{% macro csrf_input() %}
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+{% endmacro %}
+
+{% block content %}
+<h1>Managed applications</h1>
+<p class="muted">
+  The registry is the single place that declares what the panel manages.
+  It lives in <code>apps.yaml</code> next to the panel and can be edited
+  here or by hand.
+</p>
+
+<table class="reg-table">
+  <thead>
+    <tr><th>Name</th><th>Description</th><th>Working dir</th><th>Ports</th><th>Health</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for app in apps %}
+    <tr>
+      <td><code>{{ app.name }}</code></td>
+      <td>{{ app.description or '—' }}</td>
+      <td><code>{{ app.working_dir or '—' }}</code></td>
+      <td>{{ app.ports | join(', ') or '—' }}</td>
+      <td><code>{{ app.health_url or '—' }}</code></td>
+      <td>
+        <form method="POST" action="{{ url_for('delete_app', name=app.name) }}" class="inline"
+              onsubmit="return confirm('Remove {{ app.name }} from the registry? The application itself is not touched.');">
+          {{ csrf_input() }}
+          <button class="btn btn-danger" type="submit">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">Nothing registered yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add an application</h2>
+<form class="card add-form" method="POST">
+  {{ csrf_input() }}
+  <div class="grid">
+    <div><label for="name">Name *</label>
+      <input type="text" id="name" name="name" required placeholder="my-flask-app"></div>
+    <div><label for="description">Description</label>
+      <input type="text" id="description" name="description" placeholder="What this app does"></div>
+    <div><label for="working_dir">Working directory *</label>
+      <input type="text" id="working_dir" name="working_dir" required placeholder="/opt/my-app"></div>
+    <div><label for="start_command">Start command *</label>
+      <input type="text" id="start_command" name="start_command" required
+             placeholder=".venv/bin/python app.py"></div>
+    <div><label for="ports">Ports</label>
+      <input type="text" id="ports" name="ports" placeholder="8000, 5001"></div>
+    <div><label for="health_url">Health URL</label>
+      <input type="text" id="health_url" name="health_url" placeholder="http://127.0.0.1:8000/healthz"></div>
+    <div><label for="service_name">Service name</label>
+      <input type="text" id="service_name" name="service_name" placeholder="defaults to the app name"></div>
+    <div><label for="service_scope">Service scope (Linux)</label>
+      <select id="service_scope" name="service_scope">
+        <option value="user">user — systemctl --user (no root)</option>
+        <option value="system">system — sudo systemctl</option>
+      </select></div>
+    <div><label for="category">Category</label>
+      <input type="text" id="category" name="category" placeholder="production, tooling…"></div>
+  </div>
+  <button type="submit">Add to the registry</button>
+</form>
+{% endblock %}
