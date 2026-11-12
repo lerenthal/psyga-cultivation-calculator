@@ -80,7 +80,10 @@ keep working (treated as Administrator / User).
 
 Inputs: strain, culture lot #, container type (any option listed under
 `containers:` in `config.yaml` — ships with `monotub`, `4liter_box`,
-`2liter_box`), avg fresh yield (g/container), target dry weight (g).
+`2liter_box`), avg fresh yield (g/container), target dry weight (g),
+plus the optional **Spawn Bag Fill Weight (g)** and **LC Rate
+(mL per 200 g spawn)** (both default to the controlled values in
+`config.yaml`).
 
 Calculation flow:
 
@@ -91,12 +94,59 @@ Calculation flow:
 5. **Buckets** = ceil(total_substrate / bucket yield), where bucket yield
    = sum of `substrate_recipe` = 780 + 660 + 60 + 4800 = **6300 g** (SOP FORM-CULT-004)
    (single source of truth — there is no hardcoded divisor)
-6. **Grain batches** = ceil(total_spawn / 10000 g); bags = containers;
-   LC = containers × LC/container
+6. **Grain batches** = ceil(total_spawn / 10000 g)
+7. **Spawn bags to fill** = ceil(total_spawn / spawn bag fill weight). Bags
+   are filled continuously from the grain batches, so the last bag of the
+   run may be a partial fill and the per-batch bag counts add up to the
+   lot total exactly.
+8. **LC per bag** = bag spawn weight ÷ 200 g × 5 mL
+   (`media_parameters.lc_rate_ml`, `lc_rate_basis_g`); **LC needed** =
+   the sum over all bags; **LC to prepare** = LC needed + 20 % backup
+   (the floor is enforced); **media to prepare** = LC to prepare + 30 %
+   media excess.
 
 Output (Facility Working Protocol): container prep, bulk substrate
 (coir, vermiculite, gypsum, water), grain spawn (grain, water),
-inoculation/bagging, Technician + QA + Date signature lines.
+inoculation/bagging, Technician + QA + Date signature lines — followed
+by the printable SOP forms: FORM-CULT-003 (spawn), FORM-CULT-003
+(incubation), **FORM-CULT-003A (G5 inoculation)**, FORM-CULT-004
+(substrate), FORM-CULT-009 (media).
+
+### FORM-CULT-003A — G5 Inoculation Record (V6.0)
+
+Recreated from the controlled Word form `FORM-CULT-003A v3.0`. It shares
+the **SP-YYYY-NNN** number with FORM-CULT-003 (it continues the same
+spawn batch) and has its own **Print G5 inoculation form** button.
+
+Its per-bag inoculation log is **automatically sized to the number of
+bags planned** — one row per bag, carrying that bag's spawn weight and
+the exact LC volume for it. The log is printed 30 bags per sheet (15 in
+the left block, 15 in the right) with continuation sheets, exactly like
+the paper form. It is not printed in reverse mode, where there are no
+bags to inoculate.
+
+### Producing the forms (V6.1)
+
+The cultivation tab ends with a **Produce a form** panel listing every
+document with its form number and document number:
+
+| Form | Form no. | Document # |
+|---|---|---|
+| Working Protocol | FORM-CULT-001 | `WP-YYYYMMDD-NNN` |
+| Spawn Batch Production Record | FORM-CULT-003 | `SP-YYYY-NNN` |
+| Spawn Incubation & Release Log | FORM-CULT-003 | `SP-YYYY-NNN` |
+| G5 Inoculation Record | FORM-CULT-003A | `SP-YYYY-NNN` |
+| Substrate Batch Production Record | FORM-CULT-004 | `SUB-YYYY-NNN` |
+| Liquid Media Preparation Batch Record | FORM-CULT-009 | `MED-YYYY-NNN` |
+
+Each **Produce** button prints (or saves as PDF) that document on its
+own, so every document carries **its own page numbering** (Page 1 of N)
+and its own running header. There is no "print everything" button —
+printing the whole page in one go would give one continuous page count
+across all six documents.
+
+Every signature carries its own date field, so a protocol signed by the
+bench operator and released by QA can be dated independently.
 
 ### Reverse calculation (spawn-first, V3.0)
 
@@ -364,7 +414,7 @@ or from the project directory:
 .venv/Scripts/python.exe -m pytest tests -v
 ```
 
-Expected output: **183 passed**. Tests use an in-memory SQLite
+Expected output: **207 passed**. Tests use an in-memory SQLite
 database and never touch `instance/psyga_gmp.db`.
 
 Test coverage:

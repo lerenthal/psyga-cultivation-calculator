@@ -60,7 +60,7 @@
             <tr><td>Grain : water</td><td>5 kg : 10 L</td><td>{{ b.grain_g }} g : {{ b.water_ml }} ml</td></tr>
             <tr><td>Cook (open pot, no pressure)</td><td>3 &times; 12 min (~24 min), stir between</td><td></td></tr>
             <tr><td>Air-dry to surface-dry</td><td>~1 h</td><td></td></tr>
-            <tr><td>Bag fill weight</td><td>200 g (R&amp;D) / 700 g (production) &plusmn; 10/30 g</td><td>{{ b.bag_weight_g }} g</td></tr>
+            <tr><td>Bag fill weight</td><td>{{ result.bag_size_spawn | g }} g (planned, &plusmn; tolerance)</td><td>{{ result.bag_size_spawn | g }} g</td></tr>
             <tr><td># bags filled (this batch)</td><td>&mdash;</td><td>{{ b.bags }}</td></tr>
             <tr><td>Autoclave</td><td>121 &deg;C / 15 psi / 2.5 h + indicator tape</td><td></td></tr>
             <tr><td>Cool location / to ambient</td><td>Room #5, ~overnight</td><td></td></tr>
@@ -79,10 +79,16 @@
         <table>
             <tr><th>Batch</th><th>Spawn (g)</th><th># bags</th><th>Weight per bag (g)</th></tr>
             {% for b in result.grain_batches %}
-            <tr><td>Batch {{ b.index }}</td><td>{{ b.spawn_g }}</td><td>{{ b.bags }}</td><td>{{ b.bag_weight_g }}</td></tr>
+            <tr><td>Batch {{ b.index }}</td><td>{{ b.spawn_g }}</td><td>{{ b.bags }}</td><td>{{ result.bag_size_spawn | g }}</td></tr>
             {% endfor %}
             <tr style="background:#e6e6e6; font-weight:bold;"><td>Total</td><td>{{ result.total_spawn }}</td><td>{{ result.total_bags }}</td><td>&mdash;</td></tr>
         </table>
+        <p style="font-size:12px; color:#555; margin-top:8px;">
+            {{ result.total_bags }} spawn bag{{ '' if result.total_bags == 1 else 's' }} to fill.
+            Each bag receives {{ result.lc_rate_ml }} mL of liquid culture per
+            {{ result.lc_rate_basis_g | g }} g of spawn. The inoculation of every
+            bag is logged on FORM-CULT-003A (G5 Inoculation Record).
+        </p>
     </div>
 
     <div class="section">
@@ -98,7 +104,9 @@
             <tr><th>Total bags in batch</th><td>{{ result.total_bags }}</td>
                 <th># bags failing HP1</th><td></td>
                 <th>% failing</th><td></td></tr>
-            <tr><th>Decision</th><td colspan="5">&#9744; Release &nbsp; &#9744; Discard whole batch &nbsp; Init. ______</td></tr>
+            <tr><th>Decision</th><td>&#9744; Release &nbsp; &#9744; Discard whole batch</td>
+                <th>Init.</th><td style="min-width:110px;"></td>
+                <th>Date</th><td style="min-width:110px;"></td></tr>
         </table>
     </div>
 
@@ -137,6 +145,124 @@
     {{ deviations() }}
     {{ signoff() }}
     <p style="font-size:11px; margin-top:16px;">Controlling SOP: SOP-CULT-004 v3.0 &middot; Form v3.0</p>
+</div>
+{% endmacro %}
+
+{% macro g5_inoculation_form(result) %}
+{#
+  V6.0: FORM-CULT-003A v3.0 - G5 Inoculation Record.
+
+  One row per spawn bag that has to be inoculated with the G4 liquid
+  culture. The number of rows is the number of bags the calculation
+  says have to be filled, and each row carries the bag's spawn weight
+  and the exact LC volume for it.
+
+  The paper form holds 30 bags per sheet (15 in the left block, 15 in
+  the right) and continues on a further sheet beyond that, so the table
+  is emitted in sheets of 30 and the running header paginates itself.
+#}
+{% set per_sheet = 30 %}
+{% set bags = result.spawn_bags %}
+{% set sheet_count = ((bags | length) + per_sheet - 1) // per_sheet if bags | length else 1 %}
+<div class="protocol raw-form form-collapsed doc-g5">
+    {{ header("FORM-CULT-003A", "SPEC-CULT-002", "G5 INOCULATION RECORD", result.spawn_doc_number, result) }}
+
+    <div class="section">
+        <h3>1. HEADER</h3>
+        <table>
+            <tr><th>SP batch # (FORM-CULT-003)</th><td>{{ result.spawn_doc_number }}</td>
+                <th>Master Batch #</th><td>{{ result.doc_number }}</td></tr>
+            <tr><th>G4 source ID (FORM-CULT-002C &sect;5)</th><td></td>
+                <th>Inoculation date</th><td></td></tr>
+            <tr><th>Operator</th><td>{{ current_user.username }} ({{ current_user.role }})</td>
+                <th>LFH run-in &ge; 15 min (Y/N)</th><td></td></tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>2. HP3 &mdash; G4 LC RELEASE VERIFICATION (per SPEC-CULT-002)</h3>
+        <table>
+            <tr><th>Check</th><th>Pass &#9744;</th></tr>
+            <tr><td>G4 released; Cultivation Lead signature on FORM-CULT-002C &sect;5</td><td>&#9744;</td></tr>
+            <tr><td>Visual: no bacterial clouding; colour, odour normal</td><td>&#9744;</td></tr>
+            <tr><td>No contamination (visual)</td><td>&#9744;</td></tr>
+            <tr><td>PDA streak (if suspicious) clean</td><td>&#9744;</td></tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>3. PER-BAG INOCULATION LOG &mdash; {{ result.total_bags }} bag{{ '' if result.total_bags == 1 else 's' }}</h3>
+        <p style="font-size:13px;">
+            <strong>LC dose per bag:</strong>
+            {{ result.lc_rate_ml }} mL per {{ result.lc_rate_basis_g | g }} g of spawn
+            &rarr; <strong>{{ result.bag_size_spawn | g }} g bag = {{ (result.bag_size_spawn / result.lc_rate_basis_g * result.lc_rate_ml) | round(2) }} mL</strong>
+            &nbsp;&middot;&nbsp;
+            <strong>Total LC needed:</strong> {{ result.lc_needed_ml | g }} mL
+            &nbsp;&middot;&nbsp;
+            <strong>LC to prepare (+{{ result.lc_excess_pct | g }}% backup):</strong> {{ result.lc_prepare_ml }} mL
+        </p>
+        {% for sheet in range(sheet_count) %}
+        {% set offset = sheet * per_sheet %}
+        {% if sheet_count > 1 %}
+        <p style="font-size:12px; color:#555; margin-bottom:4px;">
+            Sheet {{ sheet + 1 }} of {{ sheet_count }} &mdash; bags {{ offset + 1 }}&ndash;{{ [offset + 30, bags | length] | min }}{% if bags | length > offset + 30 %} (continuation sheet){% endif %}
+        </p>
+        {% endif %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Bag #</th>
+                    <th>Grain wt (g)</th>
+                    <th>LC volume (mL) @ {{ result.lc_rate_ml }} mL/{{ result.lc_rate_basis_g | g }} g</th>
+                    <th>HP2 cool OK &#9744;</th>
+                    <th>Init.</th>
+                    <th>Bag #</th>
+                    <th>Grain wt (g)</th>
+                    <th>LC volume (mL)</th>
+                    <th>HP2 cool &#9744;</th>
+                    <th>Init.</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in range(1, 16) %}
+                {% set left = bags[offset + row - 1] if offset + row - 1 < bags | length else none %}
+                {% set right = bags[offset + 15 + row - 1] if offset + 15 + row - 1 < bags | length else none %}
+                <tr>
+                    <td>{{ left.index if left else '' }}</td>
+                    <td>{{ left.weight_g if left else '' }}</td>
+                    <td>{{ left.lc_ml if left else '' }}</td>
+                    <td>&#9744;</td>
+                    <td style="min-width:48px;"></td>
+                    <td>{{ right.index if right else '' }}</td>
+                    <td>{{ right.weight_g if right else '' }}</td>
+                    <td>{{ right.lc_ml if right else '' }}</td>
+                    <td>&#9744;</td>
+                    <td style="min-width:48px;"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endfor %}
+        <p style="font-size:11px; color:#555; margin-top:8px;">
+            {% if sheet_count > 1 %}
+            {{ sheet_count }} continuation sheet{{ '' if sheet_count == 1 else 's' }} printed, {{ per_sheet }} bags per sheet.
+            {% endif %}
+            A bag marked with a smaller grain weight is the last bag of the
+            run and is filled to the remainder.
+        </p>
+    </div>
+
+    <div class="section">
+        <h3>4. G5 RELEASE SIGN-OFF</h3>
+        <table>
+            <tr><th>Role</th><th>Name</th><th>Signature</th><th>Date</th></tr>
+            <tr><td>Operator</td><td style="min-width:160px;"></td><td style="min-width:160px;"></td><td style="min-width:100px;"></td></tr>
+            <tr><td>Cultivation Lead (G5 release)</td><td></td><td></td><td></td></tr>
+        </table>
+    </div>
+
+    {{ deviations() }}
+    <p style="font-size:11px; margin-top:16px;">Controlling SOP: SPEC-CULT-002 &middot; Form v3.0 &middot; LC source: FORM-CULT-002C &sect;5 (G4 release)</p>
 </div>
 {% endmacro %}
 
@@ -224,8 +350,14 @@
             <tr><td>Distilled water</td><td>to volume</td><td></td><td></td></tr>
             <tr><td>(other &mdash; specify)</td><td></td><td></td><td></td></tr>
         </table>
-        <p><strong>Liquid culture needed for inoculation:</strong> {{ result.total_lc }} ml ({{ result.total_bags }} bags &times; {{ result.total_lc // result.total_bags if result.total_bags else 0 }} ml)</p>
-        <p><strong>Excess ({{ result.media_excess_pct | int }}%):</strong> +{{ result.media_prep_volume_ml - result.total_lc }} ml &nbsp; / &nbsp; <strong>Total volume to prepare:</strong> {{ result.media_prep_volume_ml }} ml ({{ (result.media_prep_volume_ml / 1000) | round(3) }} L) &nbsp; / &nbsp; <strong># bottles filled:</strong> __________</p>
+        <p><strong>Liquid culture needed for inoculation:</strong> {{ result.lc_needed_ml | g }} ml
+           ({{ result.total_bags }} spawn bag{{ '' if result.total_bags == 1 else 's' }}
+           &times; {{ result.lc_rate_ml }} ml per {{ result.lc_rate_basis_g | g }} g of spawn)</p>
+        <p><strong>LC backup (+{{ result.lc_excess_pct | g }}%):</strong> +{{ result.lc_prepare_ml - result.lc_needed_ml | round(1) }} ml
+           &nbsp;/&nbsp; <strong>LC to prepare:</strong> {{ result.lc_prepare_ml }} ml</p>
+        <p><strong>Media excess ({{ result.media_excess_pct | int }}%):</strong> +{{ result.media_prep_volume_ml - result.lc_prepare_ml }} ml
+           &nbsp;/&nbsp; <strong>Total volume to prepare:</strong> {{ result.media_prep_volume_ml }} ml
+           ({{ (result.media_prep_volume_ml / 1000) | round(3) }} L) &nbsp;/&nbsp; <strong># bottles filled:</strong> __________</p>
     </div>
 
     <div class="section">

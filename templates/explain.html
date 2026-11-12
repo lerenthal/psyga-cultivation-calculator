@@ -32,6 +32,8 @@
             <li><b>Avg Yield Fresh (g/container)</b> &mdash; Expected fresh mushroom yield per container. Drives dry yield via the dry-matter ratio. Required for the standard calculation; in reverse mode it only feeds the expected-yield estimate.</li>
             <li><b>Target Dry Weight (g)</b> &mdash; Total dry mushroom you want to produce. Drives base container count. Required for the standard calculation; not used in reverse mode.</li>
             <li><b>Spawn Bags Colonized + Spawn Bag Size (g)</b> &mdash; Optional, both-or-neither. When filled, the calculator reverse-engineers the workplan from spawn already colonized: containers = floor(bags &times; size / spawn-per-container), substrate is calculated for exactly those containers, and grain-spawn prep / liquid culture are shown as not required. The contamination buffer and target dry weight do not apply in reverse mode.</li>
+            <li><b>Spawn Bag Fill Weight (g)</b> &mdash; The weight of spawn in each spawn bag. Defaults to the container's own spawn weight from <code>config.yaml</code>. It decides how many bags have to be filled (bags = total spawn &divide; fill weight, rounded up) and therefore how many rows the FORM-CULT-003A inoculation log has.</li>
+            <li><b>LC Rate (mL per 200 g spawn)</b> &mdash; The liquid culture dosed into each spawn bag. Defaults to 5 mL per 200 g from <code>config.yaml</code>. The app adds at least 20 % to the calculated total as bench backup.</li>
         </ul>
         <h3 style="font-size:14px; color:#000; margin-bottom:6px;">Document sections &mdash; what is calculated and why</h3>
         <ul>
@@ -56,8 +58,18 @@
             </li>
             <li><b>4. INOCULATION &amp; BAGGING</b>
                 <ul>
-                    <li>Bag count = total_containers (one bag per container)</li>
-                    <li>LC per bag = configured per container type (e.g. 20ml for monotub)</li>
+                    <li>Total spawn = total_containers &times; spawn_per_container</li>
+                    <li>Spawn bags to fill = ceil(total_spawn / spawn bag fill weight). The fill weight defaults to the container's own spawn weight and can be overridden on the form.</li>
+                    <li>LC per bag = bag spawn weight &divide; 200 g &times; 5 mL (both the rate and the basis come from <code>config.yaml</code> and the rate can be overridden on the form).</li>
+                    <li>LC needed = the sum over every bag. LC to prepare = LC needed + 20 % backup. Liquid media to prepare = LC to prepare + 30 % media excess.</li>
+                </ul>
+            </li>
+            <li><b>5. FORM-CULT-003A &mdash; G5 INOCULATION RECORD (V6.0)</b>
+                <ul>
+                    <li>One row per spawn bag, so the log is exactly as long as the number of bags the calculation says have to be filled.</li>
+                    <li>Each row carries the bag's spawn weight (the last bag of the run may be a partial fill) and the exact LC volume for that bag.</li>
+                    <li>The log is printed 30 bags per sheet (15 in the left block, 15 in the right) and continues on further sheets, exactly like the paper form.</li>
+                    <li>The form is not printed in reverse mode: there the spawn is already colonized, so there are no bags to inoculate.</li>
                 </ul>
             </li>
         </ul>

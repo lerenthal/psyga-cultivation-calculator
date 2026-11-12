@@ -7,14 +7,14 @@
 #
 apps:
   - name: psyga-bio
-    description: PsygaBio Production System V5 - GMP batch calculators
-    working_dir: E:\hermes_projects\order_form_app\ver5
+    description: PsygaBio Production System V6 - GMP batch calculators
+    working_dir: E:\hermes_projects\order_form_app\ver6
     start_command: [".venv/Scripts/python.exe", "app.py"]
     env:
       PORT: "5001"
       HOST: "0.0.0.0"
       PROCESS_MATCH: "app.py"
-      LOG_FILE: E:\hermes_projects\order_form_app\ver5\v5_run.err
+      LOG_FILE: E:\hermes_projects\order_form_app\ver6\v6_run.err
     ports: [5001]
     health_url: http://127.0.0.1:5001/login
     service_name: psyga-bio

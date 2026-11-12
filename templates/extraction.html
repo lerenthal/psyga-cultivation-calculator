@@ -2,6 +2,7 @@
 {% block title %}Extraction Production Plan (EX){% endblock %}
 {% block content %}
 {% import "explain.html" as ex %}
+{% import "signoff.html" as so with context %}
 {% set totals = result.get('totals', {}) if result else {} %}
 {% set per_bottle = result.get('per_bottle', {}) if result else {} %}
 {% set timeline = (result.get('timeline') or result.get('daily_checklist') or []) if result else [] %}
@@ -48,7 +49,7 @@
         size: A4;
         margin: 22mm 12mm 18mm 12mm;
         @top-center {
-            content: "PsygaBio Production Calculator V5 — FACILITY EXTRACTION PRODUCTION PLAN";
+            content: "PsygaBio Production Calculator V6 — FACILITY EXTRACTION PRODUCTION PLAN";
             font-family: Arial, sans-serif;
             font-size: 9pt;
             color: #000;
@@ -66,9 +67,10 @@
     .day-extraction td, .day-evap td { font-size: 13px; }
     .highlight { background: #f0f0f0; padding: 8px; border-left: 3px solid #000; margin-top: 12px; }
     .legacy-note { background: #e6e6e6; border: 1px solid #555555; padding: 10px; font-size: 13px; margin-bottom: 16px; }
-    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; }
-    .signature-box { text-align: center; }
+    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: flex; gap: 30px; }
+    .signature-box { flex: 1; text-align: center; }
     .signature-box .line { border-top: 1px solid #000; margin-top: 40px; padding-top: 5px; }
+    .signature-box .date-field { border-top: 1px solid #000; margin-top: 16px; padding-top: 4px; font-size: 12px; color: var(--muted); }
     @media print {
         body { background: #fff; }
         .record { border: none; padding: 20px; }
@@ -190,10 +192,10 @@
 {% if legacy %}
 <div class="legacy-note">
     <b>Legacy document (calculator V{{ result.get('_calculator_version', '4') }}).</b>
-    This record was issued before V5.0 and is reproduced from its stored
-    ledger payload exactly as it was signed. The per-bottle solvent
-    preparation protocol and the portion-based totals below were not part of
-    that document.
+    This record was issued by an earlier version of the calculator and is
+    reproduced from its stored ledger payload exactly as it was signed.
+    The per-bottle solvent preparation and the portion-based totals below
+    were not part of that document.
 </div>
 {% endif %}
 <div class="record">
@@ -341,15 +343,11 @@
         </p>
     </div>
 
-    <div class="signature-line">
-        <div class="signature-box"><div class="line">Operator Signature</div></div>
-        <div class="signature-box"><div class="line">QA Signature</div></div>
-        <div class="signature-box"><div class="line">Date</div></div>
-    </div>
+    {{ so.signature_line(["Operator", "QA"]) }}
 </div>
 
 <div class="card no-print" style="text-align:center;">
-    <button onclick="window.print()">Print / Save as PDF</button>
+    <button onclick="window.print()">Print this document / Save as PDF</button>
     <a href="{{ url_for('extraction') }}" class="btn btn-secondary">Clear / New Plan</a>
 </div>
 

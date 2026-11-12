@@ -174,7 +174,12 @@ class TestCultivationMath:
         box = cfg["containers"]["4liter_box"]
         assert result["total_substrate"] == 20 * box["substrate"]
         assert result["total_spawn"] == 20 * box["spawn"]
-        assert result["total_lc"] == 20 * box["liquid_culture"]
+        # V6.0: LC is dosed by spawn mass, not per container:
+        #   LC = total spawn / 200 g * 5 mL
+        assert result["total_lc"] == pytest.approx(
+            result["total_spawn"] / 200 * 5
+        )
+        assert result["lc_needed_ml"] == result["total_lc"]
         assert result["bag_size_spawn"] == box["spawn"]
         # Substrate buckets = ceil(total_substrate / 6300) (SOP recipe)
         assert result["substrate_bucket_count"] == math.ceil(
@@ -536,7 +541,7 @@ class TestExtractionPlan:
         from app import calculate_extraction_plan
         cfg = load_config()
         r = calculate_extraction_plan(cfg, self._form())
-        assert r["schema_version"] == "5"
+        assert r["schema_version"] == "6"
 
 
 class TestCapsulation:
@@ -1212,7 +1217,7 @@ class TestFormCaptureAndReprint:
             assert "pack_size_g" not in form
             # The stored payload is the issued document and is versioned
             payload = entry.to_payload()
-            assert payload["schema_version"] == "5"
+            assert payload["schema_version"] == "6"
             assert payload["totals"]["bottles"] == 4
 
     def test_history_view_shows_original_form_inputs(self, client):
@@ -1998,7 +2003,7 @@ class TestV3Design:
         for url in ("/", "/extraction", "/capsulation", "/login"):
             r = client.get(url, follow_redirects=True)
             assert r.status_code == 200
-            assert b"PsygaBio Production Calculator V5" in r.data
+            assert b"PsygaBio Production Calculator V6" in r.data
             assert b"title-ribbon" in r.data
 
     def test_cultivation_tab_guide_and_optional_divider(self, client):
@@ -2162,7 +2167,7 @@ class TestV4RawMaterialForms:
         assert b"LMEDP" in r.data
         assert b"Agar" not in r.data
         assert b"Total volume to prepare:" in r.data
-        assert b"Excess (30%):" in r.data
+        assert b"Media excess (30%):" in r.data
         # Stored in the ledger payload for reprint
         with test_app.app_context():
             payload = db.session.query(BatchLog).first().to_payload()
@@ -2175,9 +2180,14 @@ class TestV4RawMaterialForms:
         r = client.post("/", data=_reverse_form())
         assert r.status_code == 200
         assert b"SUBSTRATE BATCH PRODUCTION RECORD" in r.data
+        # V6.1: in reverse mode only the substrate form is produced, so
+        # the other forms are not even named in the Produce panel.
         assert b"SPAWN BATCH PRODUCTION RECORD" not in r.data
         assert b"LIQUID MEDIA PREPARATION BATCH RECORD" not in r.data
         assert b"SPAWN INCUBATION" not in r.data
+        assert b"Produce a form" in r.data
+        assert b"printForm('substrate')" in r.data
+        assert b"printForm('spawn')" not in r.data
         assert b"Bucket 5" in r.data  # 52 x 600g -> 5 buckets at SOP recipe
 
     def test_reprint_preserves_sop_numbers(self, client, test_app):
@@ -2195,11 +2205,14 @@ class TestV4RawMaterialForms:
         _login(client, "tech1", "techpass")
         r = client.post("/", data=_cultivation_form())
         assert r.status_code == 200
-        assert b"Print Spawn form" in r.data
-        assert b"Print Incubation form" in r.data
-        assert b"Print Substrate form" in r.data
-        assert b"Print Media form" in r.data
+        # V6.1: every form is produced from the "Produce a form" panel.
+        assert b"Produce a form" in r.data
+        assert b"printForm('wp')" in r.data
         assert b"printForm('spawn')" in r.data
+        assert b"printForm('incubation')" in r.data
+        assert b"printForm('g5')" in r.data
+        assert b"printForm('substrate')" in r.data
+        assert b"printForm('media')" in r.data
 
     def test_grain_batches_breakdown_two_10kg_batches(self):
         # 22400g spawn (32 monotubs) -> 3 batches? No: ceil(22400/10000)=3.
@@ -2216,12 +2229,19 @@ class TestV4RawMaterialForms:
         assert r["grain_batch_count"] == 3
         batches = r["grain_batches"]
         assert [b["spawn_g"] for b in batches] == [10000, 10000, 2400]
-        assert [b["bags"] for b in batches] == [15, 15, 4]  # 700g bags
-        assert sum(b["bags"] for b in batches) >= r["total_bags"]
+        # V6.0: bags are attributed to the batch they were drawn from,
+        # so the per-batch counts add up to the lot total exactly.
+        assert [b["bags"] for b in batches] == [15, 15, 2]  # 700 g bags
+        assert sum(b["bags"] for b in batches) == r["total_bags"]
         assert all(b["grain_g"] == 5000 and b["water_ml"] == 10000 for b in batches)
         # Media excess: total_lc * 1.3 ceil
         assert r["media_excess_pct"] == 30
-        assert r["media_prep_volume_ml"] == math.ceil(r["total_lc"] * 1.3)
+        # V6.0: media is prepared from the LC volume that already
+        # includes the >= 20 % bench backup.
+        assert r["lc_excess_pct"] >= 20
+        assert r["media_prep_volume_ml"] == math.ceil(
+            r["lc_prepare_ml"] * 1.3
+        )
 
     def test_spawn_form_repeats_procedure_per_batch(self, client):
         _login(client, "tech1", "techpass")
@@ -2245,9 +2265,11 @@ class TestV4RawMaterialForms:
         assert b'class="protocol doc-wp"' in r.data
         assert b"explain-panel" in r.data
         # Every SOP form starts collapsed behind a View form button
-        assert r.data.count(b"form-collapsed doc-") == 4
+        # V6.0: five SOP forms (003, 003 incubation, 003A, 004, 009)
+        assert r.data.count(b"form-collapsed doc-") == 5
         assert b"View form: Spawn Batch Production Record" in r.data
         assert b"View form: Spawn Incubation" in r.data
+        assert b"View form: G5 Inoculation Record" in r.data
         assert b"View form: Substrate Batch Production Record" in r.data
         assert b"View form: Liquid Media Preparation Record" in r.data
         assert b"toggleRawForm" in r.data
@@ -2588,3 +2610,432 @@ class TestExtractionDocumentV5:
                 batch_type="extraction"
             ).first()
             assert row.lot_number == "LOT-LEDGER"
+"""
+V6.0 tests - the spawn-bag model and the FORM-CULT-003A G5 Inoculation Record.
+"""
+
+import math
+import re
+
+import pytest
+
+from app import calculate_cultivation, load_config
+
+
+FORM = {
+    "strain": "Natal_F6/TATeF2/DJF3_F20",
+    "cult_lot": "CL-001",
+    "container_type": "monotub",
+    "avg_yield_fresh": "500",
+    "target_dry_weight": "1000",
+}
+
+
+def _calc(**overrides):
+    cfg = load_config()
+    form = dict(FORM)
+    form.update(overrides)
+    return calculate_cultivation(cfg, form)
+
+
+class TestV6SpawnBagModel:
+    """The spawn bag fill weight drives how many bags are filled."""
+
+    def test_default_fill_weight_is_the_container_spawn(self):
+        cfg = load_config()
+        r = _calc()
+        assert r["bag_size_spawn"] == cfg["containers"]["monotub"]["spawn"]
+        assert r["total_bags"] == math.ceil(r["total_spawn"] / r["bag_size_spawn"])
+
+    def test_fill_weight_changes_the_bag_count(self):
+        r = _calc(spawn_bag_fill_weight_g="500")
+        assert r["bag_size_spawn"] == 500
+        assert r["total_bags"] == math.ceil(r["total_spawn"] / 500)
+        assert r["total_bags"] == 45  # 22400 / 500
+
+    def test_bags_hold_exactly_the_total_spawn(self):
+        for fill in ("200", "400", "500", "750", "700"):
+            r = _calc(spawn_bag_fill_weight_g=fill)
+            held = sum(b["weight_g"] for b in r["spawn_bags"])
+            assert held == r["total_spawn"], fill
+            assert len(r["spawn_bags"]) == r["total_bags"]
+
+    def test_only_the_last_bag_can_be_partial(self):
+        r = _calc(spawn_bag_fill_weight_g="500")
+        partial = [b for b in r["spawn_bags"] if b["is_partial"]]
+        assert len(partial) <= 1
+        if partial:
+            assert partial[0]["index"] == r["total_bags"]
+            assert partial[0]["weight_g"] < r["bag_size_spawn"]
+
+    def test_per_batch_bags_add_up_to_the_lot_total(self):
+        """V6.0: bags are attributed to the batch they were drawn from."""
+        for fill in ("200", "500", "750"):
+            r = _calc(spawn_bag_fill_weight_g=fill)
+            assert sum(b["bags"] for b in r["grain_batches"]) == r["total_bags"]
+
+    def test_non_positive_fill_weight_is_rejected(self):
+        with pytest.raises(ValueError):
+            _calc(spawn_bag_fill_weight_g="-5")
+
+    def test_fill_weight_is_ignored_in_reverse_mode(self):
+        r = calculate_cultivation(
+            load_config(),
+            dict(FORM, spawn_bags_colonized="13", spawn_bag_size_g="800"),
+        )
+        assert r["calculation_mode"] == "reverse"
+        assert r["spawn_bags"] == []
+        assert r["total_lc"] == 0
+
+
+class TestV6LiquidCultureModel:
+    """LC is dosed by spawn mass, with a backup on the prepared total."""
+
+    def test_lc_per_bag_follows_the_rate(self):
+        r = _calc(spawn_bag_fill_weight_g="750")
+        assert r["lc_rate_ml"] == 5
+        assert r["lc_rate_basis_g"] == 200
+        for bag in r["spawn_bags"]:
+            assert bag["lc_ml"] == pytest.approx(
+                bag["weight_g"] / 200 * 5
+            )
+
+    def test_lc_needed_is_the_rate_times_the_total_spawn(self):
+        r = _calc(spawn_bag_fill_weight_g="500")
+        expected = r["total_spawn"] / 200 * 5
+        assert r["lc_needed_ml"] == pytest.approx(expected)
+
+    def test_prepared_volume_carries_at_least_20_percent_backup(self):
+        r = _calc()
+        assert r["lc_excess_pct"] >= 20
+        assert r["lc_prepare_ml"] >= math.ceil(r["lc_needed_ml"] * 1.20)
+
+    def test_backup_floor_cannot_be_configured_below_20(self):
+        cfg = load_config()
+        cfg["media_parameters"]["lc_excess_pct"] = 5
+        form = dict(FORM)
+        result = calculate_cultivation(cfg, form)
+        assert result["lc_excess_pct"] == 20
+
+    def test_lc_rate_can_be_overridden_on_the_form(self):
+        r = _calc(lc_rate_ml="10")
+        assert r["lc_rate_ml"] == 10
+        assert r["lc_needed_ml"] == pytest.approx(r["total_spawn"] / 200 * 10)
+
+    def test_media_is_prepared_with_its_own_excess_on_top(self):
+        cfg = load_config()
+        r = _calc()
+        media_excess = cfg["media_parameters"]["excess_pct"]
+        assert r["media_prep_volume_ml"] == math.ceil(
+            r["lc_prepare_ml"] * (1 + media_excess / 100)
+        )
+
+
+class TestV6G5InoculationForm:
+    """FORM-CULT-003A on the printed Working Protocol."""
+
+    def _html(self, **overrides):
+        from app import create_app, register_routes
+        from flask import render_template
+
+        application = create_app(
+            {"SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"}
+        )
+        register_routes(application)
+        cfg = load_config()
+        r = calculate_cultivation(cfg, dict(FORM, **overrides))
+        r.update(
+            spawn_doc_number="SP-2026-003",
+            substrate_doc_number="SUB-2026-003",
+            media_doc_number="MED-2026-003",
+            timestamp="2026-11-11 14:00:00",
+            doc_number="WP-20261111-003",
+        )
+        with application.test_request_context("/"):
+            return render_template(
+                "index.html",
+                result=r,
+                container_types=list(cfg["containers"].keys()),
+                doc_number=r["doc_number"],
+                container_defaults=cfg["containers"],
+                lc_basis_g=200.0,
+                lc_default_rate=5.0,
+            ), r
+
+    def _log_rows(self, html):
+        """Count the bag rows rendered in the inoculation log."""
+        block = re.search(
+            r'3\. PER-BAG INOCULATION LOG.*?(?=<div class="signature-line"|'
+            r'<h3>4\. G5 RELEASE SIGN-OFF)',
+            html,
+            re.S,
+        )
+        assert block, "the per-bag inoculation log was not rendered"
+        return len(re.findall(
+            r"<td>\d+</td>\s*<td>\d+</td>\s*<td>[\d.]+</td>", block.group(0)
+        ))
+
+    def test_form_is_present_in_forward_mode(self):
+        html, _ = self._html()
+        assert "FORM-CULT-003A" in html
+        assert "G5 INOCULATION RECORD" in html
+        assert "G4 source ID (FORM-CULT-002C" in html
+        assert "HP3" in html and "G4 LC RELEASE VERIFICATION" in html
+
+    def test_form_has_the_paper_sections(self):
+        html, _ = self._html()
+        assert "1. HEADER" in html
+        assert "2. HP3" in html
+        assert "3. PER-BAG INOCULATION LOG" in html
+        assert "4. G5 RELEASE SIGN-OFF" in html
+        assert "DEVIATIONS" in html
+        assert "FORM-DEV-001" in html
+
+    def test_log_has_one_row_per_bag(self):
+        html, r = self._html(spawn_bag_fill_weight_g="500")
+        assert self._log_rows(html) == r["total_bags"] == 45
+
+    def test_log_paginates_thirty_bags_per_sheet(self):
+        html, r = self._html(spawn_bag_fill_weight_g="200")
+        assert r["total_bags"] == 112
+        assert self._log_rows(html) == 112
+        # 112 bags at 30 per sheet = 4 sheets
+        assert html.count("PER-BAG INOCULATION LOG") == 1
+        assert html.count("Sheet ") >= 4
+        assert "continuation sheet" in html.lower()
+
+    def test_a_single_sheet_has_no_continuation_note(self):
+        html, r = self._html(spawn_bag_fill_weight_g="750")
+        assert r["total_bags"] == 30
+        assert self._log_rows(html) == 30
+        assert "continuation sheet" not in html.lower()
+
+    def test_per_bag_lc_volume_is_shown(self):
+        html, r = self._html(spawn_bag_fill_weight_g="750")
+        assert "18.75" in html          # 750 g bag at 5 mL / 200 g
+        assert "16.25" in html          # the partial 650 g last bag
+        assert "LC dose per bag" in html
+
+    def test_totals_are_printed(self):
+        html, r = self._html()
+        assert "Total LC needed" in html
+        assert "LC to prepare" in html
+        assert "560" in html             # 22400 g / 200 * 5
+        assert "672" in html             # + 20 % backup
+
+    def test_form_is_absent_in_reverse_mode(self):
+        html, r = self._html(
+            spawn_bags_colonized="13", spawn_bag_size_g="800"
+        )
+        assert r["calculation_mode"] == "reverse"
+        # The form itself is not printed ...
+        assert 'class="protocol raw-form form-collapsed doc-g5"' not in html
+        assert "PER-BAG INOCULATION LOG" not in html
+        # ... but the INDEX still explains what it is and when it applies.
+        assert "G5 INOCULATION RECORD" in html
+        assert "not printed in reverse mode" in html
+
+    def test_produce_button_exists(self):
+        html, _ = self._html()
+        assert "printForm('g5')" in html
+        assert "G5 Inoculation Record" in html
+        assert "FORM-CULT-003A" in html
+
+    def test_form_shares_the_spawn_batch_number(self):
+        html, _ = self._html()
+        assert "SP-2026-003" in html
+
+"""
+V6.1 tests - per-document production and per-signature dates.
+"""
+
+import re
+
+
+class TestProducePerDocument:
+    """
+    Each printed form must be produced on its own so that its page
+    numbering (Page 1 of N) is independent of the other documents.
+    """
+
+    def _html(self, **overrides):
+        from app import create_app, register_routes
+        from flask import render_template
+
+        application = create_app(
+            {"SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"}
+        )
+        register_routes(application)
+        from app import calculate_cultivation, load_config
+
+        cfg = load_config()
+        form = {
+            "strain": "S", "cult_lot": "CL", "container_type": "monotub",
+            "avg_yield_fresh": "500", "target_dry_weight": "1000",
+        }
+        form.update(overrides)
+        r = calculate_cultivation(cfg, form)
+        r.update(
+            spawn_doc_number="SP-2026-003",
+            substrate_doc_number="SUB-2026-003",
+            media_doc_number="MED-2026-003",
+            timestamp="2026-11-11 14:00:00",
+            doc_number="WP-20261111-003",
+        )
+        with application.test_request_context("/"):
+            return render_template(
+                "index.html",
+                result=r,
+                container_types=list(cfg["containers"].keys()),
+                doc_number=r["doc_number"],
+                container_defaults=cfg["containers"],
+                lc_basis_g=200.0,
+                lc_default_rate=5.0,
+            ), r
+
+    def test_print_all_button_is_gone(self):
+        html, _ = self._html()
+        assert "Print / Save as PDF (all)" not in html
+        assert "onclick=\"window.print()\"" not in html
+
+    def test_produce_panel_exists(self):
+        html, _ = self._html()
+        assert "Produce a form" in html
+        assert 'id="produce-panel"' in html
+
+    def test_one_produce_button_per_form(self):
+        html, _ = self._html()
+        for kind in ("wp", "spawn", "incubation", "g5", "substrate", "media"):
+            assert f"printForm('{kind}')" in html, kind
+
+    def test_produce_panel_lists_every_document_number(self):
+        html, _ = self._html()
+        assert "WP-20261111-003" in html
+        assert "SP-2026-003" in html
+        assert "SUB-2026-003" in html
+        assert "MED-2026-003" in html
+
+    def test_each_form_has_its_own_running_header(self):
+        """
+        The running header of the printed page is set per document just
+        before printing, so a form is never titled with another form's
+        name.
+        """
+        html, _ = self._html()
+        assert "PRINT_FORMS" in html
+        assert "setPageHeader" in html
+        assert "FACILITY WORKING PROTOCOL" in html
+        assert "SPAWN BATCH PRODUCTION RECORD" in html
+        assert "G5 INOCULATION RECORD" in html
+        assert "SUBSTRATE BATCH PRODUCTION RECORD" in html
+        assert "LIQUID MEDIA PREPARATION BATCH RECORD" in html
+
+    def test_the_g5_row_is_hidden_in_reverse_mode(self):
+        html, r = self._html(
+            spawn_bags_colonized="13", spawn_bag_size_g="800"
+        )
+        assert r["calculation_mode"] == "reverse"
+        assert "printForm('g5')" not in html
+        assert "printForm('media')" not in html
+        # the substrate form is still produced
+        assert "printForm('substrate')" in html
+
+
+class TestSignatureDates:
+    """Every signature carries its own date field."""
+
+    def _wp(self, **overrides):
+        from app import create_app, register_routes
+        from flask import render_template
+
+        application = create_app(
+            {"SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"}
+        )
+        register_routes(application)
+        from app import calculate_cultivation, load_config
+
+        cfg = load_config()
+        form = {
+            "strain": "S", "cult_lot": "CL", "container_type": "monotub",
+            "avg_yield_fresh": "500", "target_dry_weight": "1000",
+        }
+        form.update(overrides)
+        r = calculate_cultivation(cfg, form)
+        r.update(
+            spawn_doc_number="SP-2026-003",
+            substrate_doc_number="SUB-2026-003",
+            media_doc_number="MED-2026-003",
+            timestamp="2026-11-11 14:00:00",
+            doc_number="WP-20261111-003",
+        )
+        with application.test_request_context("/"):
+            return render_template(
+                "index.html",
+                result=r,
+                container_types=list(cfg["containers"].keys()),
+                doc_number=r["doc_number"],
+                container_defaults=cfg["containers"],
+                lc_basis_g=200.0,
+                lc_default_rate=5.0,
+            )
+
+    def test_wp_has_one_date_per_signature(self):
+        html = self._wp()
+        start = html.find('<div class="signature-line">')
+        assert start != -1, "the WP signature block was not rendered"
+        markup = html[start:start + 1200]
+        assert markup.count('class="date-field"') == 2
+        assert markup.count("Signature") == 2
+        # the old shared single Date box is gone
+        assert '<div class="line">Date</div>' not in markup
+
+    def test_raw_material_signoff_table_has_a_date_column(self):
+        html = self._wp()
+        # the shared signoff() macro: Role | Name | Signature | Date
+        assert "<th>Role</th><th>Name</th><th>Signature</th><th>Date</th>" in html
+
+    def test_hp1_decision_has_a_date(self):
+        html = self._wp()
+        assert "<th>Init.</th>" in html
+        assert "<th>Date</th>" in html
+
+    def test_extraction_and_capsulation_have_one_date_per_signature(self):
+        import os
+        from app import create_app, register_routes
+        from flask import render_template
+
+        application = create_app(
+            {"SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"}
+        )
+        register_routes(application)
+        from app import calculate_extraction, calculate_capsulation, load_config
+
+        cfg = load_config()
+        ex = calculate_extraction(cfg, {
+            "dried_weight_available": "500", "solvent_type": "90%",
+        })
+        ex.update(doc_number="EX-20261111-001", timestamp="2026-11-11 14:00:00")
+        with application.test_request_context("/"):
+            html = render_template(
+                "extraction.html", result=ex, error=None,
+                doc_number=ex["doc_number"],
+                solvent_types=["100%", "90%"],
+                portion_size_g=120.0, stock_bottle_volume_ml=2500.0,
+            )
+        assert html.count('class="date-field"') == 2
+
+        cp = calculate_capsulation(cfg, {
+            "production_lot_number": "PL", "grams_of_extract": "100",
+            "psilocybin_pct": "1.5", "psilocin_pct": "0.3",
+            "anti_caking_pct": "5", "dosage_mode": "tpe",
+            "source_ex_doc_numbers": "EX-20261111-001",
+        })
+        cp.update(doc_number="CP-20261111-001", timestamp="2026-11-11 14:00:00")
+        with application.test_request_context("/"):
+            html = render_template(
+                "capsulation.html", result=cp, error=None,
+                doc_number=cp["doc_number"],
+                dosage_modes=["psilocybin", "tpe"],
+            )
+        assert html.count('class="date-field"') == 2
+

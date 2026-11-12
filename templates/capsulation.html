@@ -2,6 +2,7 @@
 {% block title %}Capsulation Production Record (CP){% endblock %}
 {% block content %}
 {% import "explain.html" as ex %}
+{% import "signoff.html" as so with context %}
 <style>
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     .form-group { display: flex; flex-direction: column; }
@@ -38,7 +39,7 @@
         size: A4;
         margin: 22mm 12mm 18mm 12mm;
         @top-center {
-            content: "PsygaBio Production Calculator V5 — FACILITY CAPSULATION PRODUCTION RECORD";
+            content: "PsygaBio Production Calculator V6 — FACILITY CAPSULATION PRODUCTION RECORD";
             font-family: Arial, sans-serif;
             font-size: 9pt;
             color: #000;
@@ -51,9 +52,10 @@
         }
     }
     .section table { width: 100%; }
-    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; }
-    .signature-box { text-align: center; }
+    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: flex; gap: 30px; }
+    .signature-box { flex: 1; text-align: center; }
     .signature-box .line { border-top: 1px solid #000; margin-top: 40px; padding-top: 5px; }
+    .signature-box .date-field { border-top: 1px solid #000; margin-top: 16px; padding-top: 4px; font-size: 12px; color: var(--muted); }
     .mode-active-mass {
         background: #f0f0f0; padding: 8px 12px; border-left: 3px solid #000;
         margin: 8px 0; font-size: 14px;
@@ -232,15 +234,11 @@
         </table>
     </div>
 
-    <div class="signature-line">
-        <div class="signature-box"><div class="line">Operator Signature</div></div>
-        <div class="signature-box"><div class="line">QA Signature</div></div>
-        <div class="signature-box"><div class="line">Date</div></div>
-    </div>
+    {{ so.signature_line(["Operator", "QA"]) }}
 </div>
 
 <div class="card no-print" style="text-align:center;">
-    <button onclick="window.print()">Print / Save as PDF</button>
+    <button onclick="window.print()">Print this document / Save as PDF</button>
     <a href="{{ url_for('capsulation') }}" class="btn btn-secondary">Clear / New Record</a>
 </div>
 

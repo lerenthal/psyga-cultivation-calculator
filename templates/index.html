@@ -3,6 +3,7 @@
 {% block content %}
 {% import "explain.html" as ex %}
 {% import "raw_materials.html" as rm with context %}
+{% import "signoff.html" as so with context %}
 <style>
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     .form-group { display: flex; flex-direction: column; }
@@ -51,7 +52,7 @@
         size: A4;
         margin: 22mm 12mm 18mm 12mm;
         @top-center {
-            content: "PsygaBio Production Calculator V5 — FACILITY WORKING PROTOCOL";
+            content: "PsygaBio Production Calculator V6 — FACILITY WORKING PROTOCOL";
             font-family: Arial, sans-serif;
             font-size: 9pt;
             color: #000;
@@ -63,9 +64,10 @@
             color: #000;
         }
     }
-    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; }
-    .signature-box { text-align: center; }
+    .signature-line { margin-top: 40px; padding-top: 20px; border-top: 1px solid #000; display: flex; gap: 30px; }
+    .signature-box { flex: 1; text-align: center; }
     .signature-box .line { border-top: 1px solid #000; margin-top: 40px; padding-top: 5px; }
+    .signature-box .date-field { border-top: 1px solid #000; margin-top: 16px; padding-top: 4px; font-size: 12px; color: var(--muted); }
         /* V4: SOP forms are collapsed on screen; WP + index stay visible.
            In print they always expand (see @media print below). */
         .form-toggle { margin: 12px 0 4px; }
@@ -80,6 +82,11 @@
         }
         .view-form-btn:hover { background: #e6e6e6; }
         .raw-form.form-collapsed { display: none; }
+        .produce-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 14px; }
+        .produce-table th, .produce-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+        .produce-table th { background: #f0f0f0; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+        .produce-table td:last-child { text-align: right; width: 130px; }
+        .produce-table code { font-size: 13px; }
     @media print {
         body { background: #fff; }
         .protocol { border: none; padding: 20px; }
@@ -87,10 +94,11 @@
         .raw-form.form-collapsed { display: block !important; }
         .form-toggle { display: none !important; }
         body.print-wp .raw-form, body.print-wp .explain-panel { display: none !important; }
-        body.print-spawn .doc-wp, body.print-spawn .doc-incubation, body.print-spawn .doc-substrate, body.print-spawn .doc-media, body.print-spawn .explain-panel { display: none !important; }
-        body.print-incubation .doc-wp, body.print-incubation .doc-spawn, body.print-incubation .doc-substrate, body.print-incubation .doc-media, body.print-incubation .explain-panel { display: none !important; }
-        body.print-substrate .doc-wp, body.print-substrate .doc-spawn, body.print-substrate .doc-media, body.print-substrate .explain-panel { display: none !important; }
-        body.print-media .doc-wp, body.print-media .doc-spawn, body.print-media .doc-substrate, body.print-media .explain-panel { display: none !important; }
+        body.print-spawn .doc-wp, body.print-spawn .doc-incubation, body.print-spawn .doc-g5, body.print-spawn .doc-substrate, body.print-spawn .doc-media, body.print-spawn .explain-panel { display: none !important; }
+        body.print-incubation .doc-wp, body.print-incubation .doc-spawn, body.print-incubation .doc-g5, body.print-incubation .doc-substrate, body.print-incubation .doc-media, body.print-incubation .explain-panel { display: none !important; }
+        body.print-g5 .doc-wp, body.print-g5 .doc-spawn, body.print-g5 .doc-incubation, body.print-g5 .doc-substrate, body.print-g5 .doc-media, body.print-g5 .explain-panel { display: none !important; }
+        body.print-substrate .doc-wp, body.print-substrate .doc-spawn, body.print-substrate .doc-incubation, body.print-substrate .doc-g5, body.print-substrate .doc-media, body.print-substrate .explain-panel { display: none !important; }
+        body.print-media .doc-wp, body.print-media .doc-spawn, body.print-media .doc-incubation, body.print-media .doc-g5, body.print-media .doc-substrate, body.print-media .explain-panel { display: none !important; }
     }
 </style>
 
@@ -102,6 +110,11 @@
             <li><span class="guide-label">Mandatory (standard calculation):</span>
                 Strain, Culture Lot #, Container Type (dropdown — all options come from <code>config.yaml</code>),
                 Avg Yield Fresh (g/container), Target Dry Weight (g).</li>
+            <li><span class="guide-label">Bag &amp; LC dosing (standard calculation):</span>
+                Spawn Bag Fill Weight (g) and LC Rate (mL per {{ lc_basis_g | g }} g spawn) — both optional,
+                both defaulting to the controlled values in <code>config.yaml</code>. The fill weight
+                sets how many bags have to be filled, and that is how many rows the
+                FORM-CULT-003A inoculation log has.</li>
             <li><span class="guide-label">Optional (reverse calculation):</span>
                 Spawn Bags Colonized <b>and</b> Spawn Bag Size (g) — fill <b>both</b> to reverse-calculate
                 substrate from spawn you have already colonized. Leave both blank for the standard
@@ -111,8 +124,9 @@
                 a printable Facility Working Protocol (WP doc number) with container count, substrate
                 buckets + ingredient totals, grain-spawn batches, inoculation/bagging amounts
                 (or &ldquo;Not required&rdquo; in reverse mode), and Technician / QA / Date signature lines —
-                followed by the printable raw-material SOP forms (spawn FORM-CULT-003, substrate
-                FORM-CULT-004, media FORM-CULT-009) pre-filled with these amounts.</li>
+                followed by the printable raw-material SOP forms (spawn FORM-CULT-003, spawn incubation
+                FORM-CULT-003, <b>G5 inoculation FORM-CULT-003A</b>, substrate FORM-CULT-004,
+                media FORM-CULT-009) pre-filled with these amounts.</li>
         </ul>
     </div>
     <form method="POST">
@@ -148,6 +162,33 @@
                 <input type="number" id="target_dry_weight" name="target_dry_weight" step="0.01" placeholder="e.g., 1000"
                        value="{{ request.form.target_dry_weight or '' }}">
                 <span class="form-hint">Required for the standard calculation; not used in reverse mode.</span>
+            </div>
+            <div class="form-divider">Bag &amp; liquid-culture dosing (standard calculation)</div>
+            <div class="form-group">
+                <label for="spawn_bag_fill_weight_g">Spawn Bag Fill Weight (g)</label>
+                <input type="number" id="spawn_bag_fill_weight_g" name="spawn_bag_fill_weight_g" step="1" min="1"
+                       placeholder="e.g., 750"
+                       value="{{ request.form.spawn_bag_fill_weight_g or '' }}">
+                <span class="form-hint">
+                    Weight of spawn in each spawn bag. Defaults to the container's own
+                    spawn weight ({{ container_defaults.get(container_type, {}).get('spawn', '—') }} g).
+                    The number of bags to fill - and the number of rows in
+                    FORM-CULT-003A - is calculated from this.
+                </span>
+            </div>
+            <div class="form-group">
+                <label for="lc_rate_ml">LC Rate (mL per {{ lc_basis_g | g }} g spawn)</label>
+                <input type="number" id="lc_rate_ml" name="lc_rate_ml" step="0.01" min="0"
+                       placeholder="e.g., 5"
+                       value="{{ request.form.lc_rate_ml or '' }}">
+                <span class="form-hint">
+                    Liquid culture dosed into each spawn bag. Defaults to
+                    {{ lc_default_rate }} mL per {{ lc_basis_g | g }} g. The app adds
+                    at least 20 % to the calculated total as bench backup.
+                </span>
+            </div>
+            <div class="form-group full-width">
+                <span class="form-hint">Leave both blank to use the controlled values from <code>config.yaml</code>.</span>
             </div>
             <div class="form-divider">Optional — Reverse Calculation (colonized spawn on hand)</div>
             <div class="form-group">
@@ -261,17 +302,19 @@
         {% if result.calculation_mode == 'reverse' %}
         <p><strong>Status:</strong> Not required — spawn already colonized and bagged</p>
         {% endif %}
-        <p><strong>Total Bags:</strong> {{ result.total_bags }}</p>
-        <p><strong>Spawn per Bag:</strong> {{ result.bag_size_spawn }}g</p>
-        <p><strong>Liquid Culture per Bag:</strong> {{ result.total_lc // result.total_bags }}ml</p>
-        <p><strong>Total Liquid Culture:</strong> {{ result.total_lc }}ml</p>
+        <p><strong>Spawn Bags to Fill:</strong> {{ result.total_bags }}</p>
+        <p><strong>Spawn per Bag:</strong> {{ result.bag_size_spawn | g }}g</p>
+        {% if result.spawn_bags %}
+        <p><strong>Liquid Culture per Bag:</strong> {{ (result.bag_size_spawn / result.lc_rate_basis_g * result.lc_rate_ml) | round(2) }}ml
+           ({{ result.lc_rate_ml }} ml per {{ result.lc_rate_basis_g | g }} g of spawn)</p>
+        <p><strong>Total Liquid Culture needed:</strong> {{ result.lc_needed_ml | g }}ml</p>
+        <p><strong>LC to prepare (+{{ result.lc_excess_pct | g }}% backup):</strong> {{ result.lc_prepare_ml }}ml</p>
+        {% else %}
+        <p><strong>Liquid Culture:</strong> Not required &mdash; spawn already colonized</p>
+        {% endif %}
     </div>
 
-    <div class="signature-line">
-        <div class="signature-box"><div class="line">Technician Signature</div></div>
-        <div class="signature-box"><div class="line">QA Signature</div></div>
-        <div class="signature-box"><div class="line">Date</div></div>
-    </div>
+    {{ so.signature_line(["Technician", "QA"]) }}
 </div>
 
 {# V4.0: raw-material SOP forms, populated from this calculation.
@@ -287,6 +330,17 @@
     {{ rm.spawn_form(result) }}
     <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="Spawn Incubation & Release Log" onclick="toggleRawForm(this)">View form: Spawn Incubation &amp; Release Log</button></div>
     {{ rm.incubation_form(result) }}
+    <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="G5 Inoculation Record" onclick="toggleRawForm(this)">View form: G5 Inoculation Record (FORM-CULT-003A)</button></div>
+    {% if result.spawn_bags %}
+    {{ rm.g5_inoculation_form(result) }}
+    {% else %}
+    <p class="card no-print" style="font-size:13px; color:var(--muted);">
+        FORM-CULT-003A (G5 Inoculation Record) is not printed for this record:
+        it was issued before the spawn-bag model, or it is a reverse-mode
+        calculation where the spawn is already colonized and there are no
+        bags to inoculate.
+    </p>
+    {% endif %}
     <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="Substrate Batch Production Record" onclick="toggleRawForm(this)">View form: Substrate Batch Production Record</button></div>
     {{ rm.substrate_form(result) }}
     <div class="form-toggle no-print"><button type="button" class="view-form-btn" data-label="Liquid Media Preparation Record" onclick="toggleRawForm(this)">View form: Liquid Media Preparation Record</button></div>
@@ -304,27 +358,114 @@
     }
 </script>
 
-<div class="card no-print" style="text-align:center;">
-    <button onclick="window.print()">Print / Save as PDF (all)</button>
-    <button onclick="printForm('wp')">Print WP only</button>
-    {% if result.calculation_mode != 'reverse' %}
-    <button onclick="printForm('spawn')">Print Spawn form</button>
-    <button onclick="printForm('incubation')">Print Incubation form</button>
-    {% endif %}
-    <button onclick="printForm('substrate')">Print Substrate form</button>
-    {% if result.calculation_mode != 'reverse' %}
-    <button onclick="printForm('media')">Print Media form</button>
-    {% endif %}
-    <a href="{{ url_for('index') }}" class="btn btn-secondary">Clear / New Calculation</a>
-    <script>
-        function printForm(kind) {
-            document.body.className = '';
-            if (kind) document.body.classList.add('print-' + kind);
-            window.print();
-        }
-        window.onafterprint = function () { document.body.className = ''; };
-    </script>
-</div>
+    <div class="card no-print" id="produce-panel">
+        <h2 style="margin-top:0;">Produce a form</h2>
+        <p style="color:var(--muted); font-size:13px; margin-top:0; max-width:760px;">
+            Every form is produced on its own, so each document carries
+            <b>its own page numbering</b> (Page 1 of N) and its own running
+            header. Pick the document you need, then print it &mdash; or save
+            it as a PDF from the print dialog.
+        </p>
+        <table class="produce-table">
+            <thead>
+                <tr><th>Form</th><th>Form no.</th><th>Document #</th><th></th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Working Protocol</td>
+                    <td>FORM-CULT-001</td>
+                    <td><code>{{ result.doc_number }}</code></td>
+                    <td><button class="btn btn-primary" onclick="printForm('wp')">Produce</button></td>
+                </tr>
+                {% if result.calculation_mode != 'reverse' %}
+                <tr>
+                    <td>Spawn Batch Production Record</td>
+                    <td>FORM-CULT-003</td>
+                    <td><code>{{ result.spawn_doc_number }}</code></td>
+                    <td><button class="btn" onclick="printForm('spawn')">Produce</button></td>
+                </tr>
+                <tr>
+                    <td>Spawn Incubation &amp; Release Log</td>
+                    <td>FORM-CULT-003</td>
+                    <td><code>{{ result.spawn_doc_number }}</code></td>
+                    <td><button class="btn" onclick="printForm('incubation')">Produce</button></td>
+                </tr>
+                {% if result.spawn_bags %}
+                <tr>
+                    <td>G5 Inoculation Record</td>
+                    <td>FORM-CULT-003A</td>
+                    <td><code>{{ result.spawn_doc_number }}</code></td>
+                    <td><button class="btn" onclick="printForm('g5')">Produce</button></td>
+                </tr>
+                {% endif %}
+                {% endif %}
+                <tr>
+                    <td>Substrate Batch Production Record</td>
+                    <td>FORM-CULT-004</td>
+                    <td><code>{{ result.substrate_doc_number }}</code></td>
+                    <td><button class="btn" onclick="printForm('substrate')">Produce</button></td>
+                </tr>
+                {% if result.calculation_mode != 'reverse' %}
+                <tr>
+                    <td>Liquid Media Preparation Batch Record</td>
+                    <td>FORM-CULT-009</td>
+                    <td><code>{{ result.media_doc_number }}</code></td>
+                    <td><button class="btn" onclick="printForm('media')">Produce</button></td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:0;">
+            Note: printing the whole page in one go (Ctrl+P) still produces one
+            continuous page count across every document &mdash; use the Produce
+            buttons above to keep the numbering of each document independent.
+        </p>
+        <p style="text-align:center; margin-top:18px;">
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">Clear / New Calculation</a>
+        </p>
+        <script>
+            // V6.1: the running header of the printed page is set per
+            // document just before printing, so each form is titled with
+            // its own name instead of inheriting the last @page rule.
+            var PRINT_FORMS = {
+                wp:         "PsygaBio Production Calculator V6 — FACILITY WORKING PROTOCOL",
+                {% if result.calculation_mode != 'reverse' %}
+                spawn:      "PsygaBio Production Calculator V6 — SPAWN BATCH PRODUCTION RECORD (FORM-CULT-003)",
+                incubation: "PsygaBio Production Calculator V6 — SPAWN INCUBATION &amp; RELEASE LOG (FORM-CULT-003)",
+                {% if result.spawn_bags %}
+                g5:         "PsygaBio Production Calculator V6 — G5 INOCULATION RECORD (FORM-CULT-003A)",
+                {% endif %}
+                {% endif %}
+                substrate:  "PsygaBio Production Calculator V6 — SUBSTRATE BATCH PRODUCTION RECORD (FORM-CULT-004)",
+                {% if result.calculation_mode != 'reverse' %}
+                media:      "PsygaBio Production Calculator V6 — LIQUID MEDIA PREPARATION BATCH RECORD (FORM-CULT-009)"
+                {% endif %}
+            };
+            var DEFAULT_PAGE_TITLE = "PsygaBio Production Calculator V6";
+
+            function setPageHeader(title) {
+                var style = document.getElementById("print-page-style");
+                if (!style) {
+                    style = document.createElement("style");
+                    style.id = "print-page-style";
+                    document.head.appendChild(style);
+                }
+                style.textContent = '@media print { @page { @top-center { content: "' + title + '"; } } }';
+            }
+
+            function printForm(kind) {
+                document.body.className = '';
+                if (kind) document.body.classList.add('print-' + kind);
+                setPageHeader(PRINT_FORMS[kind] || DEFAULT_PAGE_TITLE);
+                window.print();
+            }
+
+            window.onafterprint = function () {
+                document.body.className = '';
+                setPageHeader(DEFAULT_PAGE_TITLE);
+            };
+        </script>
+    </div>
 
 {{ ex.panel("cultivation", result) }}
 {% endif %}

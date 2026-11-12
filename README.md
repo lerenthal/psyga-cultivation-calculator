@@ -1,4 +1,4 @@
-# PsygaBio Production System V5.0 — GMP Batch Calculators
+# PsygaBio Production System V6.0 — GMP Batch Calculators
 
 Authenticated Flask application for mycology production planning. Three
 calculator tabs generate printable, audit-stamped working documents, and
@@ -17,6 +17,90 @@ every issuance is written to an append-only SQLite ledger.
 > makes an app **come back automatically after a reboot**. It is generic:
 > it manages any Python application on the server, not just this one.
 > See [Server Control Panel](#server-control-panel-auxiliary-tool) below.
+
+## V6.1 changes
+
+**Every form is produced on its own.** The "Print / Save as PDF (all)"
+button is gone, and the flat row of print buttons is replaced by a
+**Produce a form** panel that lists each document with its form number
+and document number:
+
+```
+Produce a form
+  Working Protocol                     FORM-CULT-001   WP-20261111-004   [Produce]
+  Spawn Batch Production Record        FORM-CULT-003   SP-2026-003      [Produce]
+  Spawn Incubation & Release Log       FORM-CULT-003   SP-2026-003      [Produce]
+  G5 Inoculation Record                FORM-CULT-003A  SP-2026-003      [Produce]
+  Substrate Batch Production Record    FORM-CULT-004   SUB-2026-003     [Produce]
+  Liquid Media Preparation Record      FORM-CULT-009   MED-2026-003     [Produce]
+```
+
+Producing a single form hides the others, so **each document carries its
+own page numbering (Page 1 of N)** and its own running header — no more
+one continuous page count across every document. The running header is
+set per document immediately before printing, so a form is never titled
+with another form's name.
+
+Printing the whole page in one go with Ctrl+P still produces one
+continuous page count; the panel says so explicitly.
+
+**Every signature has its own date.** A form with two signatures
+(technician + QA, operator + QA) now has two date fields, so the bench
+sign-off and the QA release can be dated independently. The shared
+`signoff()` table on the raw-material forms already had a Date column
+per row and is unchanged.
+
+## V6.0 changes
+
+**The spawn bag fill weight is now an operator input.** It used to be
+taken from the container recipe. You can now set it on the cultivation
+form (default: the container's own spawn weight), and the app works out
+how many spawn bags have to be filled — and therefore how many rows the
+inoculation log has.
+
+| Container | Typical fill weight |
+|---|---|
+| 2 liter box | 200 g or 400 g |
+| 4 liter box | 500 g |
+| monotub | 750 g |
+
+**Liquid culture is now dosed by spawn mass, not by container count.**
+
+```
+LC per bag = bag spawn weight / 200 g × 5 mL
+LC needed  = the sum over every spawn bag
+LC to prepare = LC needed + 20 % backup      (never less than 20 %)
+Media to prepare = LC to prepare + 30 % media excess
+```
+
+The rate is configurable (`media_parameters.lc_rate_ml`,
+`lc_rate_basis_g`, `lc_excess_pct`) and the rate can be overridden per
+batch from the form.
+
+**FORM-CULT-003A — G5 Inoculation Record** is a new printable form on
+the Working Protocol, recreated from the controlled Word form
+`FORM-CULT-003A v3.0`:
+
+* §1 Header — SP batch #, Master Batch #, G4 source ID, inoculation
+  date, operator, LFH run-in
+* §2 HP3 — G4 LC release verification
+* §3 **Per-bag inoculation log — automatically sized to the number of
+  bags planned**, one row per bag with its spawn weight and the exact LC
+  volume for that bag; printed 30 bags per sheet (15 + 15) with
+  continuation sheets, exactly like the paper form
+* §4 G5 release sign-off
+* §5 Deviations
+
+It shares the **SP-YYYY-NNN** number with FORM-CULT-003 (it is a
+continuation of the same spawn batch) and gets its own
+**Print G5 inoculation form** button. It is not printed in reverse
+mode: there the spawn is already colonized, so there are no bags to
+inoculate.
+
+**Bags are now attributed to the batch they were drawn from**, so the
+per-batch bag counts on FORM-CULT-003 always add up to the lot total
+exactly (V5 rounded each batch up independently and over-filled the
+last one).
 
 ## V5.0 changes
 
@@ -233,7 +317,7 @@ or, from the project directory:
 .venv/Scripts/python.exe -m pytest tests -v
 ```
 
-Currently **183 tests passing** (pure calculator math, sequence
+Currently **207 tests passing** (pure calculator math, sequence
 generation, Flask integration, user management, form capture & reprint,
 config loading, the V2.0 config-driven-options suite and the V5.0
 hardening suite — CSRF, DB-level ledger immutability, secret handling,
@@ -353,7 +437,7 @@ Full details, the API and the test suite are in
 app.py                 # factory, models, calculator engines, routes
 config.yaml            # production parameters (containers, recipes, extraction)
 templates/             # base + one template per page; print CSS hides forms
-tests/test_app.py      # pytest suite (in-memory DB) - 184 tests
+tests/test_app.py      # pytest suite (in-memory DB) - 207 tests
 instance/              # psyga_gmp.db (git-ignored)
 control_panel_tool/    # the auxiliary Server Control Panel (see above)
 ├── dashboard.py       #   entry point (also works as dashboard:app)

@@ -1,0 +1,23 @@
+{#
+  Shared signature block.
+
+  V6.1: every signature carries its own date field. A form with two
+  signatures (technician + QA, operator + QA) therefore has two dates,
+  so the two sign-offs can be dated independently - which matters when a
+  protocol is signed off by the bench operator in the morning and
+  released by QA in the afternoon.
+
+  Usage:
+      {% import "signoff.html" as so %}
+      {{ so.signature_line(["Technician", "QA"]) }}
+#}
+{% macro signature_line(roles) %}
+<div class="signature-line">
+    {% for role in roles %}
+    <div class="signature-box">
+        <div class="line">{{ role }} Signature</div>
+        <div class="date-field">Date</div>
+    </div>
+    {% endfor %}
+</div>
+{% endmacro %}

@@ -1,9 +1,10 @@
 # =============================================================================
-# PsygaBio Production System V5.0 -- calculation configuration
-# Recipes aligned to SOP forms FORM-CULT-003 / 004 (v3.0):
+# PsygaBio Production System V6.0 -- calculation configuration
+# Recipes aligned to SOP forms FORM-CULT-003 / 003A / 004 (v3.0):
 #   substrate per 16 L bucket: coir 780 + vermiculite 660 + gypsum 60
 #     + water 4800 = 6300 g net per bucket
 #   grain batch: 5 kg grain : 10 L water (SOP-CULT-004)
+#   liquid culture: 5 mL per 200 g of spawn (FORM-CULT-003A)
 # =============================================================================
 #
 # ADMIN: every calculation option lives in this file. To add or change an
@@ -42,6 +43,17 @@ media_parameters:
   # Liquid media is prepared with this % excess over the LC volume
   # needed for inoculation (media bottles in excess).
   excess_pct: 30
+
+  # V6.0: liquid culture is dosed by SPAWN MASS, not by container count.
+  #   LC per bag = bag spawn weight / lc_rate_basis_g * lc_rate_ml
+  #   LC needed  = the sum over every spawn bag
+  #   LC to prepare = LC needed + lc_excess_pct (backup for the bench)
+  # With the controlled defaults a 750 g spawn bag receives
+  #   750 / 200 * 5 = 18.75 mL of liquid culture.
+  lc_rate_ml: 5
+  lc_rate_basis_g: 200
+  # Backup over the calculated LC needed. V6.0 enforces a floor of 20 %.
+  lc_excess_pct: 20
 
 # Container options. To ADD a container, copy a block, give it a new
 # unique name, and set its three values (grams substrate, grams spawn,

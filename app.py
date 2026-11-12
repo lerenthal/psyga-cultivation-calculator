@@ -1,5 +1,5 @@
 """
-PsygaBio Production System V5.0 - GMP Batch Calculators
+PsygaBio Production System V6.0 - GMP Batch Calculators
 =======================================================
 A GMP-compliant three-tab Flask application providing:
 
@@ -8,6 +8,8 @@ A GMP-compliant three-tab Flask application providing:
                         spawn-first reverse calculation (V3.0), plus
                         printable raw-material SOP forms (V4.0):
                         FORM-CULT-003 spawn (SP-YYYY-NNN),
+                        FORM-CULT-003 incubation,
+                        FORM-CULT-003A G5 inoculation (V6.0),
                         FORM-CULT-004 substrate (SUB-YYYY-NNN),
                         FORM-CULT-009 media (MED-YYYY-NNN).
   Tab 2 (Extraction):  Portion-based extraction planner (V5.0): the lot is
@@ -52,6 +54,18 @@ V5.0 hardening (see README "V5.0 changes"):
     debugger is never exposed on a shared host;
   * CSRF tokens protect every state-changing POST;
   * SQLite runs in WAL mode with foreign keys enforced.
+
+V6.0: the spawn bag fill weight is an operator input on the cultivation
+form (defaulting to the container's own spawn weight) and it decides how
+many spawn bags have to be filled. Liquid culture is dosed by spawn
+mass - 5 mL per 200 g of spawn by default - instead of per container,
+with a 20 % bench backup on the prepared volume. The new printable
+FORM-CULT-003A "G5 Inoculation Record" logs the inoculation of every
+bag, with one row per bag and 30 bags per printed sheet.
+
+V6.1: every printed form is produced on its own ("Produce a form"
+panel), so each document keeps its own page numbering and its own
+running header; and every signature carries its own date field.
 
 Records of every generated document are persisted to a local SQLite
 database as an immutable ledger (BatchLog), each row stamped with a
@@ -116,7 +130,7 @@ CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 # Version tag written into every calculated payload. The reprint route uses
 # it to reproduce a stored document exactly as it was issued.
-CALCULATOR_VERSION = "5"
+CALCULATOR_VERSION = "6"
 
 
 def _env_flag(name, default=False):
@@ -857,6 +871,23 @@ def calculate_cultivation(config, form):
     spawn_per_container = container["spawn"]
     lc_per_container = container["liquid_culture"]
 
+    # ---- V6.0 forward-mode bag + LC inputs -------------------------------
+    # The spawn bag fill weight drives how many bags have to be filled,
+    # and the LC rate drives the volume each bag receives. Both default
+    # to the controlled values from config.yaml.
+    forward_bag_size_g = None
+    forward_lc_rate_ml = None
+    if not reverse_mode:
+        forward_bag_size_g = _opt_float("spawn_bag_fill_weight_g")
+        if forward_bag_size_g is None:
+            forward_bag_size_g = spawn_per_container
+        elif forward_bag_size_g <= 0:
+            raise ValueError("spawn_bag_fill_weight_g must be positive")
+
+        forward_lc_rate_ml = _opt_float("lc_rate_ml")
+        if forward_lc_rate_ml is not None and forward_lc_rate_ml < 0:
+            raise ValueError("lc_rate_ml must not be negative")
+
     dry_yield_per_container = (
         (avg_yield_fresh or 0) * config["dry_matter_ratio"]
     )
@@ -901,14 +932,31 @@ def calculate_cultivation(config, form):
     total_substrate_water = substrate_bucket_count * substrate_recipe["water"]
 
     total_spawn = total_containers * spawn_per_container
+
+    # V6.0: liquid culture is dosed by spawn MASS, not by container count.
+    # The rates live in config.yaml and can be overridden per batch from
+    # the cultivation form.
+    media_params = config.get("media_parameters", {}) or {}
+    lc_rate_ml = float(media_params.get("lc_rate_ml", 5))
+    if forward_lc_rate_ml is not None:
+        lc_rate_ml = forward_lc_rate_ml
+    lc_rate_basis_g = float(media_params.get("lc_rate_basis_g", 200))
+    lc_excess_pct = float(media_params.get("lc_excess_pct", 20))
+    # V6.0: the backup over the calculated LC is never less than 20 %.
+    lc_excess_pct = max(20.0, lc_excess_pct)
+
     if reverse_mode:
-        # Spawn already colonized: no new grain or liquid culture.
+        # Spawn already colonized: no new grain or liquid culture, and
+        # no bags to inoculate - FORM-CULT-003A does not apply.
         grain_batch_count = 0
         total_grain = 0
         total_grain_water = 0
         total_bags = spawn_bags_colonized
         bag_size_spawn = spawn_bag_size_g
         total_lc = 0
+        lc_needed_ml = 0
+        lc_prepare_ml = 0
+        spawn_bags = []
     else:
         # Grain batch size is config-driven (V1 hardcoded 10000 g).
         grain_batch_size_g = float(config.get("grain_batch_size_g", 10000))
@@ -916,34 +964,68 @@ def calculate_cultivation(config, form):
         grain_recipe = config["grain_batch"]
         total_grain = grain_batch_count * grain_recipe["grain"]
         total_grain_water = grain_batch_count * grain_recipe["water"]
-        total_bags = total_containers
-        bag_size_spawn = spawn_per_container
-        total_lc = total_bags * lc_per_container
 
-    # V4: per-grain-batch breakdown for the spawn form. Each batch is
+        # V6.0: the spawn bag fill weight is an operator input (it
+        # defaults to the container's own spawn weight) and it drives how
+        # many bags have to be filled.
+        bag_size_spawn = forward_bag_size_g
+        spawn_bags = []
+        remaining = total_spawn
+        index = 1
+        while remaining > 0:
+            weight = min(bag_size_spawn, remaining)
+            spawn_bags.append({
+                "index": index,
+                "weight_g": int(round(weight)),
+                "is_partial": weight < bag_size_spawn - 1e-9,
+            })
+            remaining -= weight
+            index += 1
+        total_bags = len(spawn_bags)
+
+        # LC per bag from the spawn weight, then the lot total.
+        for bag in spawn_bags:
+            bag["lc_ml"] = round(
+                bag["weight_g"] / lc_rate_basis_g * lc_rate_ml, 2
+            )
+        lc_needed_ml = round(sum(b["lc_ml"] for b in spawn_bags), 2)
+        lc_prepare_ml = math.ceil(lc_needed_ml * (1 + lc_excess_pct / 100))
+        total_lc = lc_needed_ml
+
+    # V4/V6: per-grain-batch breakdown for the spawn form. Each batch is
     # grain_batch_size_g of spawn (10 kg); the last batch may be partial.
-    # Bags per batch = ceil(batch spawn / bag size).
+    # V6.0: bags are attributed to the batch the spawn was drawn from, so
+    # the per-batch bag counts always add up to the lot bag count (V4
+    # rounded each batch up independently and over-filled the last one).
     grain_batches = []
     if not reverse_mode and grain_batch_count:
+        bag_cursor = 0
         remaining = total_spawn
         for i in range(1, grain_batch_count + 1):
             batch_spawn = min(grain_batch_size_g, remaining)
+            # Bags that start inside this batch belong to it.
+            bags_in_batch = 0
+            filled_in_batch = 0
+            while bag_cursor < len(spawn_bags) and filled_in_batch < batch_spawn:
+                bags_in_batch += 1
+                filled_in_batch += spawn_bags[bag_cursor]["weight_g"]
+                bag_cursor += 1
             grain_batches.append({
                 "index": i,
                 "grain_g": grain_recipe["grain"],
                 "water_ml": grain_recipe["water"],
                 "spawn_g": int(batch_spawn),
-                "bags": math.ceil(batch_spawn / bag_size_spawn),
+                "bags": bags_in_batch,
                 "bag_weight_g": int(bag_size_spawn),
             })
             remaining -= batch_spawn
 
     # V4: liquid media is prepared with an excess over the LC needed
     # for inoculation (media bottles in excess, default +30%).
-    media_params = config.get("media_parameters", {}) or {}
     media_excess_pct = float(media_params.get("excess_pct", 30))
     media_prep_volume_ml = (
-        math.ceil(total_lc * (1 + media_excess_pct / 100)) if total_lc else 0
+        math.ceil(lc_prepare_ml * (1 + media_excess_pct / 100))
+        if lc_prepare_ml else 0
     )
 
     expected_dry_weight_g = round(
@@ -979,6 +1061,13 @@ def calculate_cultivation(config, form):
         "total_bags": total_bags,
         "bag_size_spawn": bag_size_spawn,
         "total_lc": total_lc,
+        "lc_needed_ml": lc_needed_ml,
+        "lc_prepare_ml": lc_prepare_ml,
+        "lc_rate_ml": lc_rate_ml,
+        "lc_rate_basis_g": lc_rate_basis_g,
+        "lc_excess_pct": lc_excess_pct,
+        "lc_per_container_nominal": lc_per_container,
+        "spawn_bags": spawn_bags,
         "grain_batches": grain_batches,
         "media_excess_pct": media_excess_pct,
         "media_prep_volume_ml": media_prep_volume_ml,
@@ -1542,6 +1631,7 @@ def register_routes(app):
         result = None
         doc_number = None
         container_types = list(config["containers"].keys())
+        media_params = config.get("media_parameters", {}) or {}
 
         if request.method == "POST":
             try:
@@ -1572,6 +1662,9 @@ def register_routes(app):
             result=result,
             container_types=container_types,
             doc_number=doc_number,
+            container_defaults=config["containers"],
+            lc_basis_g=float(media_params.get("lc_rate_basis_g", 200)),
+            lc_default_rate=float(media_params.get("lc_rate_ml", 5)),
         )
 
     @app.route("/extraction", methods=["GET", "POST"])
@@ -1737,12 +1830,16 @@ def register_routes(app):
 
         if entry.batch_type == "cultivation":
             container_types = list(config["containers"].keys())
+            media_params = config.get("media_parameters", {}) or {}
             return render_template(
                 "index.html",
                 result=result,
                 container_types=container_types,
                 doc_number=entry.doc_number,
                 reprint=True,
+                container_defaults=config["containers"],
+                lc_basis_g=float(media_params.get("lc_rate_basis_g", 200)),
+                lc_default_rate=float(media_params.get("lc_rate_ml", 5)),
             )
         elif entry.batch_type == "extraction":
             extraction_params = config["extraction_parameters"]
